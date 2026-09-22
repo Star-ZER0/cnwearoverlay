@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CN Wear Overlay</string>
+    <string name="module_description">让表冠触觉在小米/OPPO手表上正常工作；并修复小米部分触觉反馈常量导致的震感异常。</string>
+</resources>

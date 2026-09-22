@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Alpha silhouette: the screen stays transparent so themed tint preserves the waveform. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="480"
+    android:viewportHeight="480">
+    <group
+        android:pivotX="240"
+        android:pivotY="240"
+        android:scaleX="0.72"
+        android:scaleY="0.72">
+        <!-- End the straps at the screen boundary to keep the screen cutout clear. -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M224,68H256A28,28 0,0 1,284 96V148H196V96A28,28 0,0 1,224 68Z M196,332H284V384A28,28 0,0 1,256 412H224A28,28 0,0 1,196 384Z M352,220H356A12,12 0,0 1,368 232V248A12,12 0,0 1,356 260H352A12,12 0,0 1,340 248V232A12,12 0,0 1,352 220Z" />
+        <path
+            android:fillColor="#000000"
+            android:fillType="evenOdd"
+            android:pathData="M240,128A112,112 0,1 1,240 352A112,112 0,1 1,240 128Z M240,148A92,92 0,1 1,240 332A92,92 0,1 1,240 148Z" />
+        <path
+            android:pathData="M174,240H192L212,210L240,270L268,210L288,240H306"
+            android:strokeColor="#000000"
+            android:strokeWidth="16"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M100,208Q84,240 100,272M388,208Q404,240 388,272 M68,188Q40,240 68,292M420,188Q448,240 420,292"
+            android:strokeColor="#000000"
+            android:strokeWidth="16"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
