@@ -101,4 +101,4 @@ Xposed 工程使用 Gradle **9.7.1**、AGP **9.3.3**、Android SDK **37**，Java
 
 ## 许可证
 
-见 [LICENSE](LICENSE)（GNU LGPL v3）。
+见 [LICENSE](LICENSE)（Apache-2.0 with LLVM Exception）。

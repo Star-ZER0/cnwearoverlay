@@ -10,8 +10,8 @@ android {
         applicationId = "cc.star0.wear.xposed.cnwearoverlay"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         ndk {
             // 只保留 arm64-v8a 和 armeabi-v7a 架构
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
