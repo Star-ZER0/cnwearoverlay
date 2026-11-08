@@ -15,6 +15,7 @@ import java.lang.reflect.Method;
  *       —— 小米返回 (19,18,20)、OPPO 返回 (12,12,12) 的 HapticConstants，
  *       提前返回从而不会触碰系统缺失的 com.google.wear.input.WearHapticFeedbackConstants
  *       （原逻辑在小米 API35 上会 NoClassDefFoundError，在 OPPO API30 上恒落禁用分支）。
+ *   - 目标 3：仅 OPPO，将 Compose 收到的 oplus_crown 鼠标滚轮转换为 rotary 输入。
  */
 final class Hooks {
 
@@ -32,6 +33,13 @@ final class Hooks {
         }
         if (platform.isXiaomi()) {
             hookViewPerformHapticFeedback(xp, platform);
+        }
+        if (platform.isOppo()) {
+            try {
+                CrownMouseHook.install(xp, appClassLoader);
+            } catch (Throwable t) {
+                xp.log(Log.WARN, TAG, "Compose crown input hook failed", t);
+            }
         }
         installMissingWearSdk(xp, appClassLoader);
         try {
@@ -93,7 +101,7 @@ final class Hooks {
         }
     }
 
-    private static void deoptimize(XposedInterface xp, Method method) {
+    static void deoptimize(XposedInterface xp, Method method) {
         try {
             xp.deoptimize(method);
         } catch (Throwable t) {

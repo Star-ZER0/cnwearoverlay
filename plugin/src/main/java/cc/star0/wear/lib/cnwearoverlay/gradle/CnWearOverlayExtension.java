@@ -19,7 +19,8 @@ public interface CnWearOverlayExtension {
     /**
      * 是否给 androidx.wear.compose.foundation.rotary.HapticsKt 打补丁：
      * 1) getCustomRotaryConstants(View) 包装：小米返回 (19,18,20)、OPPO 返回 (12,12,12)；
-     * 2) hasWearSDK(Context) 包装（仅在同时启用 generateStub 时注入）。
+     * 2) hasWearSDK(Context) 包装（仅在同时启用 generateStub 时注入）；
+     * 3) AndroidComposeView 输入包装：将 OPPO oplus_crown 的鼠标滚轮转为 rotary 事件。
      */
     Property<Boolean> getPatchHapticsKt();
 

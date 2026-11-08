@@ -8,7 +8,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 /**
- * 核心字节码访问器，对每个被 instrument 的类做两类改写：
+ * 核心字节码访问器，对每个被 instrument 的类做三类改写：
  *
  * A. HapticsKt 补丁（仅当类为 androidx.wear.compose.foundation.rotary.HapticsKt）：
  * 采用「重命名原方法 + 新增同名包装方法」的方式，避免对原方法做帧表手术：
@@ -33,10 +33,16 @@ import org.objectweb.asm.Type;
  *     -> invokestatic cc/star0/wear/lib/cnwearoverlay/runtime/CnWearOverlay.performHapticFeedback(Landroid/view/View;II)Z
  *
  * 栈形状完全一致（receiver+args -> Z），不引入分支，不影响帧表与 maxStack/maxLocals。
+ *
+ * C. 包装 AndroidComposeView.dispatchGenericMotionEvent：仅把 OPPO oplus_crown 的
+ * SOURCE_MOUSE 滚动副本转为标准 rotary 输入；未消费则重试原输入，finally 回收副本。
  */
 final class CnWearOverlayClassVisitor extends ClassVisitor {
 
     private static final String HAPTICS_KT = "androidx/wear/compose/foundation/rotary/HapticsKt";
+    private static final String COMPOSE_VIEW = "androidx/compose/ui/platform/AndroidComposeView";
+    private static final String MOTION_EVENT = "android/view/MotionEvent";
+    private static final String DESC_DISPATCH = "(Landroid/view/MotionEvent;)Z";
     private static final String HAPTIC_CONSTANTS =
             "androidx/wear/compose/foundation/rotary/HapticConstants";
     private static final String HELPER = "cc/star0/wear/lib/cnwearoverlay/runtime/CnWearOverlay";
@@ -52,6 +58,9 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
     private final Predicate<String> isViewSubclass;
 
     private boolean isHapticsKt = false;
+    private boolean isComposeView = false;
+    private boolean renamedDispatch = false;
+    private int dispatchAccess;
 
     private boolean renamedGcrc = false;
     private int gcrcAccess;
@@ -80,12 +89,20 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
             String superName,
             String[] interfaces) {
         isHapticsKt = HAPTICS_KT.equals(name);
+        isComposeView = COMPOSE_VIEW.equals(name);
         super.visit(version, access, name, signature, superName, interfaces);
     }
 
     @Override
     public MethodVisitor visitMethod(
             int access, String name, String descriptor, String signature, String[] exceptions) {
+        if (isComposeView && patchHaptics
+                && "dispatchGenericMotionEvent".equals(name) && DESC_DISPATCH.equals(descriptor)
+                && (access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) == 0) {
+            renamedDispatch = true;
+            dispatchAccess = access;
+            return wrap(super.visitMethod(access, name + ORIG_SUFFIX, descriptor, signature, exceptions));
+        }
         // 层 1：仅匹配当前 getCustomRotaryConstants 签名。
         if (isHapticsKt
                 && patchHaptics
@@ -119,7 +136,65 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
         if (renamedHws) {
             emitHasWearSdkWrapper(hwsAccess);
         }
+        if (renamedDispatch) {
+            emitDispatchWrapper();
+        }
         super.visitEnd();
+    }
+
+    /** 只分发一次已消费的 rotary；没有 rotary 消费者时回落原滚轮路径，并确保副本被回收。 */
+    private void emitDispatchWrapper() {
+        MethodVisitor mv = super.visitMethod(
+                dispatchAccess, "dispatchGenericMotionEvent", DESC_DISPATCH, null, null);
+        Label start = new Label();
+        Label end = new Label();
+        Label failed = new Label();
+        mv.visitCode();
+        mv.visitTryCatchBlock(start, end, failed, null);
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, HELPER, "rotaryEvent",
+                "(Landroid/view/MotionEvent;)Landroid/view/MotionEvent;", false);
+        mv.visitVarInsn(Opcodes.ASTORE, 2);
+        mv.visitLabel(start);
+        emitDispatchCall(mv, 2);
+        mv.visitVarInsn(Opcodes.ISTORE, 3);
+        mv.visitVarInsn(Opcodes.ILOAD, 3);
+        mv.visitJumpInsn(Opcodes.IFNE, end);
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitVarInsn(Opcodes.ALOAD, 2);
+        mv.visitJumpInsn(Opcodes.IF_ACMPEQ, end);
+        emitDispatchCall(mv, 1);
+        mv.visitVarInsn(Opcodes.ISTORE, 3);
+        mv.visitLabel(end);
+        mv.visitFrame(Opcodes.F_NEW, 4,
+                new Object[] {COMPOSE_VIEW, MOTION_EVENT, MOTION_EVENT, Opcodes.INTEGER}, 0, new Object[0]);
+        emitRecycle(mv);
+        mv.visitVarInsn(Opcodes.ILOAD, 3);
+        mv.visitInsn(Opcodes.IRETURN);
+        mv.visitLabel(failed);
+        mv.visitFrame(Opcodes.F_NEW, 3,
+                new Object[] {COMPOSE_VIEW, MOTION_EVENT, MOTION_EVENT}, 1,
+                new Object[] {"java/lang/Throwable"});
+        mv.visitVarInsn(Opcodes.ASTORE, 3);
+        emitRecycle(mv);
+        mv.visitVarInsn(Opcodes.ALOAD, 3);
+        mv.visitInsn(Opcodes.ATHROW);
+        mv.visitMaxs(2, 4);
+        mv.visitEnd();
+    }
+
+    private static void emitDispatchCall(MethodVisitor mv, int eventSlot) {
+        mv.visitVarInsn(Opcodes.ALOAD, 0);
+        mv.visitVarInsn(Opcodes.ALOAD, eventSlot);
+        mv.visitMethodInsn(Opcodes.INVOKESPECIAL, COMPOSE_VIEW,
+                "dispatchGenericMotionEvent" + ORIG_SUFFIX, DESC_DISPATCH, false);
+    }
+
+    private static void emitRecycle(MethodVisitor mv) {
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitVarInsn(Opcodes.ALOAD, 2);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, HELPER, "recycleRotaryEvent",
+                "(Landroid/view/MotionEvent;Landroid/view/MotionEvent;)V", false);
     }
 
     /** remap 开启时，为方法体挂调用点重写器（含被重命名的原方法，保持一致性）。 */

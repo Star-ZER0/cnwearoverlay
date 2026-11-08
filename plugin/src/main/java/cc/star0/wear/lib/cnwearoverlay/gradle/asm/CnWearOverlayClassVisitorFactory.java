@@ -15,13 +15,14 @@ import org.objectweb.asm.ClassVisitor;
  * 通过 isInstrumentable 做廉价过滤：
  *   - 排除运行时类自身（否则代理方法会递归重写自身调用，导致无限递归）；
  *   - 排除 com.google.wear.input 桩类；
- *   - patchHapticsKt 开启时命中 HapticsKt；
+ *   - patchHapticsKt 开启时命中 HapticsKt 和 Compose 的通用输入入口；
  *   - remapXiaomiConstants 开启时接受全部其余类（业务代码的 CLOCK_TICK 调用点可能在任何类里）。
  */
 public abstract class CnWearOverlayClassVisitorFactory
         implements AsmClassVisitorFactory<CnWearInstrumentationParams> {
 
     private static final String HAPTICS_KT = "androidx.wear.compose.foundation.rotary.HapticsKt";
+    private static final String COMPOSE_VIEW = "androidx.compose.ui.platform.AndroidComposeView";
     private static final String STUB_CLASS = "com.google.wear.input.WearHapticFeedbackConstants";
 
     @Override
@@ -57,7 +58,8 @@ public abstract class CnWearOverlayClassVisitorFactory
         if (p == null || !Boolean.TRUE.equals(p.getEnabled().getOrNull())) {
             return false;
         }
-        if (Boolean.TRUE.equals(p.getPatchHapticsKt().getOrNull()) && HAPTICS_KT.equals(name)) {
+        if (Boolean.TRUE.equals(p.getPatchHapticsKt().getOrNull())
+                && (HAPTICS_KT.equals(name) || COMPOSE_VIEW.equals(name))) {
             return true;
         }
         return Boolean.TRUE.equals(p.getRemapXiaomiConstants().getOrNull());

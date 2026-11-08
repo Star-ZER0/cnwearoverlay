@@ -10,8 +10,8 @@ android {
         applicationId = "cc.star0.wear.xposed.cnwearoverlay"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         ndk {
             // 只保留 arm64-v8a 和 armeabi-v7a 架构
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -33,7 +33,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
 }
 
 // 单独生成兼容 DEX，供 ART 的 native 类查找直接使用。
@@ -51,6 +50,16 @@ val compileWearSdkBridge = tasks.register<JavaCompile>("compileWearSdkBridge") {
     destinationDirectory.set(bridgeClasses)
     options.release.set(17)
     options.encoding = "UTF-8"
+}
+// 模块使用的辅助类从同一次 runtime 编译中提取；Google 桩由独立 bridge 提供。
+val moduleRuntimeJar = tasks.register<Jar>("moduleRuntimeJar") {
+    description = "Packages CN Wear Overlay runtime for the Xposed module"
+    dependsOn(compileWearSdkBridge)
+    from(bridgeClasses) {
+        include("cc/star0/wear/lib/cnwearoverlay/runtime/CnWearOverlay*.class")
+    }
+    archiveFileName.set("cnwearoverlay-runtime.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("wear-sdk-bridge"))
 }
 val wearSdkBridgeJar = tasks.register<Jar>("wearSdkBridgeJar") {
     description = "Packages CN Wear Overlay WearSDK Bridge into a JAR"
@@ -78,6 +87,7 @@ android.sourceSets.getByName("main").assets.directories.add(bridgeAssets.get().a
 tasks.named("preBuild") { dependsOn(dexWearSdkBridge) }
 
 dependencies {
+    implementation(files(moduleRuntimeJar))
     // libxposed API 1.0.2（= 构件 102.0.0）：compileOnly，绝不打包进 APK
     compileOnly("io.github.libxposed:api:102.0.0")
 }

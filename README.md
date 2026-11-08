@@ -49,7 +49,7 @@ cnWearOverlay {
 | 选项 | 作用 |
 | --- | --- |
 | `enabled` | 总开关；关闭后不注入运行时或修改 ASM 字节码 |
-| `patchHapticsKt` | 包装 Wear Compose 的表冠常量选择逻辑 |
+| `patchHapticsKt` | 适配 Wear Compose 的表冠常量和输入 |
 | `remapXiaomiConstants` | 改写应用及依赖的 `View.performHapticFeedback` 调用，运行时仅在小米设备上重映射常量 |
 | `generateStub` | 注入缺失的 `com.google.wear.input.WearHapticFeedbackConstants` 桩类；与 `patchHapticsKt` 同时开启时才包装 `hasWearSDK` |
 

@@ -1,11 +1,13 @@
 package cc.star0.wear.lib.cnwearoverlay.runtime;
 
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.View;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 
 /**
- * cnwearoverlay 运行时辅助类（由 Gradle 插件以 jar 依赖注入 app，勿手工引用）。
+ * cnwearoverlay 运行时辅助类，由 Gradle 插件以 jar 依赖注入 app，也供 Xposed 模块调用。
  *
  * 职责（与 libref 逆向报告中的链路一一对应）：
  *   - 设备识别：探测 boot classpath 中的小米 framework / SDK 类或 OPPO 线性马达类；存在真实的
@@ -25,6 +27,8 @@ import java.lang.reflect.Field;
  *       CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27) 重映射为 SEGMENT_TICK(26)
  *       （修复小米部分常量的震感异常：系统把 4/27 映射到 TEXTURE_TICK(21)；
  *       26 走 EFFECT_TICK(2) -> 210 表冠旋转）；其余设备与常量原样透传。
+ *
+ *   - 层 4 {@link #rotaryEvent(MotionEvent)}：将 OPPO oplus_crown 的鼠标滚轮副本转为 rotary 输入。
  */
 public final class CnWearOverlay {
 
@@ -61,6 +65,43 @@ public final class CnWearOverlay {
     private static volatile int activeState = STATE_UNKNOWN;
 
     private CnWearOverlay() {}
+
+    /** 将 OPPO 表冠伪装的鼠标滚轮转成 Compose rotary 输入，调用方负责回收副本。 */
+    public static MotionEvent rotaryEvent(MotionEvent event) {
+        if (event.getActionMasked() != MotionEvent.ACTION_SCROLL
+                || !event.isFromSource(InputDevice.SOURCE_MOUSE)
+                || event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
+                || event.getPointerCount() != 1
+                || !isOppo()) {
+            return event;
+        }
+        InputDevice device = event.getDevice();
+        if (device == null || !"oplus_crown".equals(device.getName())) {
+            return event;
+        }
+        float delta = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (!Float.isFinite(delta) || delta == 0f) {
+            return event;
+        }
+        MotionEvent.PointerProperties properties = new MotionEvent.PointerProperties();
+        MotionEvent.PointerCoords coords = new MotionEvent.PointerCoords();
+        event.getPointerProperties(0, properties);
+        event.getPointerCoords(0, coords);
+        // 两条 Compose 路径都会对原始轴值取负并乘系统 scroll factor；这里只换轴，不缩放/翻转。
+        coords.setAxisValue(MotionEvent.AXIS_SCROLL, delta);
+        return MotionEvent.obtain(event.getDownTime(), event.getEventTime(), event.getAction(), 1,
+                new MotionEvent.PointerProperties[] {properties},
+                new MotionEvent.PointerCoords[] {coords},
+                event.getMetaState(), event.getButtonState(), event.getXPrecision(), event.getYPrecision(),
+                event.getDeviceId(), event.getEdgeFlags(), InputDevice.SOURCE_ROTARY_ENCODER, event.getFlags());
+    }
+
+    /** 分发完成（包括异常）后仅回收自己创建的副本。 */
+    public static void recycleRotaryEvent(MotionEvent original, MotionEvent mapped) {
+        if (mapped != original) {
+            mapped.recycle();
+        }
+    }
 
     // ------------------------------------------------------------------
     // 设备识别
