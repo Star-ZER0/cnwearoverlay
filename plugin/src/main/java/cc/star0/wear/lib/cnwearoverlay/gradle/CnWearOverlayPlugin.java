@@ -32,7 +32,7 @@ import org.gradle.api.tasks.TaskProvider;
  * 在小米 / OPPO 手表上正常工作，无需修改任何业务代码：
  *   - 层 1：包装 {@code HapticsKt.getCustomRotaryConstants(View)} ——
  *       小米返回 (19,18,20)（SCROLL_*，经小米注入映射为 210 表冠旋转），
- *       OPPO 返回 (12,12,12)（GESTURE_START，系统映射为波形 302 滚动触觉）。
+ *       OPPO 返回 (12,12,12)（MODERN 由系统播放 302，LEGACY 由运行时直接播放）。
  *   - 层 2：包装 {@code HapticsKt.hasWearSDK(Context)}（OPPO API 30 上恒为 false，
  *       需强制为 true 走 WearSDK 常量路径）+ 注入
  *       {@code com.google.wear.input.WearHapticFeedbackConstants} 桩类
@@ -41,7 +41,8 @@ import org.gradle.api.tasks.TaskProvider;
  *   - 层 3：重写 app 内所有 {@code View.performHapticFeedback(I)/(II)} 调用点为
  *       运行时代理，仅在小米系统上把 CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27)
  *       映射为 SEGMENT_TICK(26)，修复震感异常（小米系统将 4/27 映射到 TEXTURE_TICK(21)，
- *       而 26 走 EFFECT_TICK -> 210 表冠旋转）。其余设备与常量全部原样透传。
+ *       而 26 走 EFFECT_TICK -> 210 表冠旋转）。旧 OPPO 的 12 直接播放 302，失败不回退。
+ *       关闭小米重映射时，patchHapticsKt 仍代理 rotary 包内的旧 OPPO 触觉调用。
  * 使用方式：将本仓库放到目标项目中，{@code settings.gradle.kts} 加
  * {@code includeBuild("cnwearoverlay")}（指向仓库根目录），app 模块 {@code plugins { id("cc.star0.wear.lib.cnwearoverlay") }}。
  */

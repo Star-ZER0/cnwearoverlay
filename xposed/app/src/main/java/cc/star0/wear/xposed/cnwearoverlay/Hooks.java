@@ -2,6 +2,7 @@ package cc.star0.wear.xposed.cnwearoverlay;
 
 import android.util.Log;
 import android.view.View;
+import cc.star0.wear.lib.cnwearoverlay.runtime.CnWearOverlay;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedInterface.ExceptionMode;
 import java.lang.reflect.Method;
@@ -10,12 +11,13 @@ import java.lang.reflect.Method;
  * Hook 安装（全部在应用进程内，不触碰 system_server / 系统服务进程）：
  *   - 目标 1：hook {@code android.view.View.performHapticFeedback(int)/(int,int)}
  *       —— 仅小米设备把 CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27) 重映射为 SEGMENT_TICK(26)；
- *       其余设备与常量直接放行。无论目标 app 是否用 Compose 均生效。
+ *       —— 旧 OPPO 的 12 直接播放 302，失败返回 false；其余设备与常量直接放行。
  *   - 目标 2：hook {@code androidx...rotary.HapticsKt.getCustomRotaryConstants(View)}
  *       —— 小米返回 (19,18,20)、OPPO 返回 (12,12,12) 的 HapticConstants，
  *       提前返回从而不会触碰系统缺失的 com.google.wear.input.WearHapticFeedbackConstants
  *       （原逻辑在小米 API35 上会 NoClassDefFoundError，在 OPPO API30 上恒落禁用分支）。
- *   - 目标 3：仅 OPPO，将 Compose 收到的 oplus_crown 鼠标滚轮转换为 rotary 输入。
+ *   - 目标 3：仅 OPPO，将 Compose 收到的单指鼠标滚轮转换为 rotary 输入；
+ *     MODERN 仅接受 oplus_crown，LEGACY 不限制设备名。
  */
 final class Hooks {
 
@@ -31,7 +33,7 @@ final class Hooks {
         if (!platform.isActive()) {
             return;
         }
-        if (platform.isXiaomi()) {
+        if (platform.isXiaomi() || platform.isOppoLegacy()) {
             hookViewPerformHapticFeedback(xp, platform);
         }
         if (platform.isOppo()) {
@@ -58,7 +60,7 @@ final class Hooks {
     }
 
     // ------------------------------------------------------------------
-    // 目标 1：CLOCK_TICK / SEGMENT_FREQUENT_TICK -> SEGMENT_TICK（仅小米）
+    // 目标 1：小米常量重映射，以及旧 OPPO 的 12 -> 302
     // ------------------------------------------------------------------
 
     private static void hookViewPerformHapticFeedback(XposedInterface xp, Platform platform) {
@@ -69,6 +71,10 @@ final class Hooks {
                     .intercept(
                             chain -> {
                                 int fc = (Integer) chain.getArg(0);
+                                if (platform.needsLegacyScrollFeedback(fc)) {
+                                    return CnWearOverlay.performOppoLegacyScrollFeedback(
+                                            (View) chain.getThisObject(), 0);
+                                }
                                 int mapped = platform.remapFeedbackConstant(fc);
                                 if (mapped != fc) {
                                     return chain.proceed(new Object[] {mapped});
@@ -88,6 +94,10 @@ final class Hooks {
                     .intercept(
                             chain -> {
                                 int fc = (Integer) chain.getArg(0);
+                                if (platform.needsLegacyScrollFeedback(fc)) {
+                                    return CnWearOverlay.performOppoLegacyScrollFeedback(
+                                            (View) chain.getThisObject(), (Integer) chain.getArg(1));
+                                }
                                 int mapped = platform.remapFeedbackConstant(fc);
                                 if (mapped != fc) {
                                     int flags = (Integer) chain.getArg(1);

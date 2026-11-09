@@ -34,12 +34,13 @@ import org.objectweb.asm.Type;
  *
  * 栈形状完全一致（receiver+args -> Z），不引入分支，不影响帧表与 maxStack/maxLocals。
  *
- * C. 包装 AndroidComposeView.dispatchGenericMotionEvent：仅把 OPPO oplus_crown 的
+ * C. 包装 AndroidComposeView.dispatchGenericMotionEvent：把 OPPO 的单指
  * SOURCE_MOUSE 滚动副本转为标准 rotary 输入；未消费则重试原输入，finally 回收副本。
  */
 final class CnWearOverlayClassVisitor extends ClassVisitor {
 
     private static final String HAPTICS_KT = "androidx/wear/compose/foundation/rotary/HapticsKt";
+    private static final String ROTARY_PACKAGE = "androidx/wear/compose/foundation/rotary/";
     private static final String COMPOSE_VIEW = "androidx/compose/ui/platform/AndroidComposeView";
     private static final String MOTION_EVENT = "android/view/MotionEvent";
     private static final String DESC_DISPATCH = "(Landroid/view/MotionEvent;)Z";
@@ -58,6 +59,7 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
     private final Predicate<String> isViewSubclass;
 
     private boolean isHapticsKt = false;
+    private boolean isRotaryClass = false;
     private boolean isComposeView = false;
     private boolean renamedDispatch = false;
     private int dispatchAccess;
@@ -89,6 +91,7 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
             String superName,
             String[] interfaces) {
         isHapticsKt = HAPTICS_KT.equals(name);
+        isRotaryClass = name.startsWith(ROTARY_PACKAGE);
         isComposeView = COMPOSE_VIEW.equals(name);
         super.visit(version, access, name, signature, superName, interfaces);
     }
@@ -158,6 +161,11 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
         mv.visitLabel(start);
         emitDispatchCall(mv, 2);
         mv.visitVarInsn(Opcodes.ISTORE, 3);
+        mv.visitVarInsn(Opcodes.ALOAD, 1);
+        mv.visitVarInsn(Opcodes.ALOAD, 2);
+        mv.visitVarInsn(Opcodes.ILOAD, 3);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, HELPER, "logRotaryDispatch",
+                "(Landroid/view/MotionEvent;Landroid/view/MotionEvent;Z)V", false);
         mv.visitVarInsn(Opcodes.ILOAD, 3);
         mv.visitJumpInsn(Opcodes.IFNE, end);
         mv.visitVarInsn(Opcodes.ALOAD, 1);
@@ -179,7 +187,7 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
         emitRecycle(mv);
         mv.visitVarInsn(Opcodes.ALOAD, 3);
         mv.visitInsn(Opcodes.ATHROW);
-        mv.visitMaxs(2, 4);
+        mv.visitMaxs(3, 4);
         mv.visitEnd();
     }
 
@@ -197,9 +205,15 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
                 "(Landroid/view/MotionEvent;Landroid/view/MotionEvent;)V", false);
     }
 
-    /** remap 开启时，为方法体挂调用点重写器（含被重命名的原方法，保持一致性）。 */
+    /** Compose 的旧 OPPO 触觉代理不依赖小米重映射开关。 */
     private MethodVisitor wrap(MethodVisitor mv) {
-        return remap ? new PerformHapticFeedbackRewriter(api, mv, isViewSubclass) : mv;
+        if (remap) {
+            return new PerformHapticFeedbackRewriter(api, mv, isViewSubclass, "performHapticFeedback");
+        }
+        if (patchHaptics && isRotaryClass) {
+            return new PerformHapticFeedbackRewriter(api, mv, isViewSubclass, "performRotaryHapticFeedback");
+        }
+        return mv;
     }
 
     /**
@@ -259,11 +273,13 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
     /** 把 View 及其子类的虚调用替换为运行时代理（栈形状不变）。 */
     private static final class PerformHapticFeedbackRewriter extends MethodVisitor {
         private final Predicate<String> isViewSubclass;
+        private final String helperMethod;
 
         PerformHapticFeedbackRewriter(
-                int api, MethodVisitor mv, Predicate<String> isViewSubclass) {
+                int api, MethodVisitor mv, Predicate<String> isViewSubclass, String helperMethod) {
             super(api, mv);
             this.isViewSubclass = isViewSubclass;
+            this.helperMethod = helperMethod;
         }
 
         @Override
@@ -277,7 +293,7 @@ final class CnWearOverlayClassVisitor extends ClassVisitor {
                 super.visitMethodInsn(
                         Opcodes.INVOKESTATIC,
                         HELPER,
-                        "performHapticFeedback",
+                        helperMethod,
                         "(Landroid/view/View;" + descriptor.substring(1),
                         false);
                 return;

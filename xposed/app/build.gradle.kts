@@ -10,8 +10,8 @@ android {
         applicationId = "cc.star0.wear.xposed.cnwearoverlay"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2.0"
         ndk {
             // 只保留 arm64-v8a 和 armeabi-v7a 架构
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -56,7 +56,7 @@ val moduleRuntimeJar = tasks.register<Jar>("moduleRuntimeJar") {
     description = "Packages CN Wear Overlay runtime for the Xposed module"
     dependsOn(compileWearSdkBridge)
     from(bridgeClasses) {
-        include("cc/star0/wear/lib/cnwearoverlay/runtime/CnWearOverlay*.class")
+        include("cc/star0/wear/lib/cnwearoverlay/runtime/**")
     }
     archiveFileName.set("cnwearoverlay-runtime.jar")
     destinationDirectory.set(layout.buildDirectory.dir("wear-sdk-bridge"))

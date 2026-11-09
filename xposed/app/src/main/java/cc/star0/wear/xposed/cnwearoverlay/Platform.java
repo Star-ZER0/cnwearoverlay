@@ -8,8 +8,8 @@ package cc.star0.wear.xposed.cnwearoverlay;
  *       SCROLL_LIMIT —— 小米注入将 18/20 映射为 210 表冠旋转、19 映射为 211 键盘反馈；
  *       CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27) 被系统映射到 TEXTURE_TICK(21)，
  *       为修复这些常量的震感异常，重映射为 SEGMENT_TICK(26)（EFFECT_TICK -> 210）。
- *   - OPPO 手表：framework 删除了 SCROLL_*，官方表冠触觉统一用 GESTURE_START(12)
- *       （WearPhoneWindowManager 映射为线性马达波形 302，且绕过睡眠/勿扰门禁）。
+ *   - OPPO 手表：同时有 LinearmotorVibrator 和 HapticScrollFeedbackProvider 为 MODERN，
+ *       只有前者为 LEGACY；均向 Compose 提供 12，LEGACY 由 View Hook 直接播放波形 302。
  *   - 真 Wear OS：boot classpath 存在 com.google.wear.input.WearHapticFeedbackConstants，
  *       一律不介入（含 OPPO/OnePlus 的 Wear OS 版手表）。
  */
@@ -33,13 +33,15 @@ final class Platform {
             "com.xiaomi.miwear.input.WearHapticFeedbackConstants";
     // framework.jar 中的稳定标记，不依赖可选 wear-sdk.jar 的加载方式。
     private static final String XIAOMI_FRAMEWORK = "miwear.os.VibrationEffectId";
-    // OPPO framework.jar 中的震动服务客户端，WearPhoneWindowManager 通过它播放波形 302。
+    // 两代 OPPO 都有此客户端，需结合滚动反馈类判断 12 是否由系统路由到 302。
     private static final String OPPO_VIBRATOR =
             "android.os.linearmotorvibrator.LinearmotorVibrator";
+    private static final String OPPO_SCROLL_FEEDBACK = "android.view.HapticScrollFeedbackProvider";
 
     static final int STATE_INACTIVE = 0;
     static final int STATE_XIAOMI = 1;
-    static final int STATE_OPPO = 2;
+    static final int STATE_OPPO_MODERN = 2;
+    static final int STATE_OPPO_LEGACY = 3;
 
     private final int state;
     private Platform(int state) {
@@ -59,7 +61,8 @@ final class Platform {
             return new Platform(STATE_XIAOMI);
         }
         if (oppo) {
-            return new Platform(STATE_OPPO);
+            return new Platform(hasSystemClass(OPPO_SCROLL_FEEDBACK)
+                    ? STATE_OPPO_MODERN : STATE_OPPO_LEGACY);
         }
         return new Platform(STATE_INACTIVE);
     }
@@ -87,7 +90,19 @@ final class Platform {
     }
 
     boolean isOppo() {
-        return state == STATE_OPPO;
+        return isOppoModern() || isOppoLegacy();
+    }
+
+    boolean isOppoModern() {
+        return state == STATE_OPPO_MODERN;
+    }
+
+    boolean isOppoLegacy() {
+        return state == STATE_OPPO_LEGACY;
+    }
+
+    boolean needsLegacyScrollFeedback(int feedbackConstant) {
+        return isOppoLegacy() && feedbackConstant == OPPO_TICK;
     }
 
     /** 目标 2：仅小米上把 4/27 重映射为 26；其余原样透传。 */

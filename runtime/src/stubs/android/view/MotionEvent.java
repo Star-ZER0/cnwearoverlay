@@ -19,6 +19,7 @@ public class MotionEvent {
 
     public int getActionMasked() { throw new IllegalStateException("stub"); }
     public int getAction() { throw new IllegalStateException("stub"); }
+    public int getSource() { throw new IllegalStateException("stub"); }
     public boolean isFromSource(int source) { throw new IllegalStateException("stub"); }
     public int getPointerCount() { throw new IllegalStateException("stub"); }
     public InputDevice getDevice() { throw new IllegalStateException("stub"); }

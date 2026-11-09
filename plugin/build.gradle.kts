@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "cc.star0.wear.lib"
-version = "1.1.1"
+version = "1.2.0"
 
 java {
     // 与 xposed 构建统一使用 Java 17。
