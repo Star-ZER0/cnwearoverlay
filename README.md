@@ -2,6 +2,9 @@
 
 为小米 / OPPO 手表补充 Wear Compose 表冠触觉兼容，并修复小米部分触觉反馈常量导致的震感异常：将 `CLOCK_TICK` / `SEGMENT_FREQUENT_TICK` 映射为 `SEGMENT_TICK`。
 
+> [!NOTE]
+> 本项目仍处于较早期阶段，暂时仅支持 Xiaomi Watch 5 系列、OPPO Watch X2 系列和 OPPO Watch X3 系列及其更新产品。其他设备尚待适配，兼容性未经验证。
+
 项目提供两种接入方式：可修改应用源码时使用 **Gradle 插件**；需要在应用进程内安装 Hook 时使用 **Xposed 模块**。运行时根据系统类识别设备，检测到系统自带 Google Wear 触觉 SDK 时不介入。
 
 ## Gradle 插件使用说明
