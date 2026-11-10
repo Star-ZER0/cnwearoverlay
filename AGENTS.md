@@ -83,9 +83,15 @@ git diff --check
 
 ### 环境与产物
 
-macOS / Linux 的示例通过 `bash` 调用脚本，无需先设置脚本执行权限。两类平台都通过环境变量 `ANDROID_HOME` 或被忽略的 `xposed/local.properties` 配置 SDK 路径，文档与共享构建脚本不写个人机器路径。
+Gradle 启动脚本在 Git 中标记为可执行，macOS / Linux 可直接使用 `./xposed/gradlew` 调用。两类平台都通过环境变量 `ANDROID_HOME` 或被忽略的 `xposed/local.properties` 配置 SDK 路径，文档与共享构建脚本不写个人机器路径。
 
-根构建不会构建 Xposed。Xposed 构建会直接编译 `runtime/src/main/java` 源码作为 bridge，并通过 `moduleRuntimeJar` 从同一编译产物中提取整个 runtime 包供模块主 DEX 使用，因此修改 runtime 后通常需要检查两套构建。签名未配置，Release 输出默认是未签名 APK。
+根构建不会构建 Xposed。Xposed 构建会直接编译 `runtime/src/main/java` 源码作为 bridge，并通过 `moduleRuntimeJar` 从同一编译产物中提取整个 runtime 包供模块主 DEX 使用，因此修改 runtime 后通常需要检查两套构建。未配置 `ANDROID_KEYSTORE_PATH` 等签名环境变量时，Release 输出默认是未签名 APK。
+
+版本号统一维护在根目录 `version.properties`，两个独立构建都读取它；正式发布时递增
+`versionCode`。`.github/workflows/build.yml` 在分支 push / PR 时编译两套构建，
+`release.yml` 在 tag push 时校验版本、构建签名 APK，再分别发布 GitHub Release 和 Maven Central。
+Central 发布包含 `cc.star0.wear.lib:cnwearoverlay` 及原插件 ID 的 marker；GPG 签名只在
+`signAllPublications=true` 时启用。
 
 ## Gradle 插件链路
 

@@ -25,6 +25,7 @@ import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.work.DisableCachingByDefault;
 
 /**
  * CN Wear Overlay Gradle 插件（主方案）。
@@ -165,6 +166,7 @@ public final class CnWearOverlayPlugin implements Plugin<Project> {
     }
 
     /** 从插件 jar 内嵌资源解压运行时辅助 jar 与 com.google.wear.input 桩 jar。 */
+    @DisableCachingByDefault(because = "Extracting two small embedded JARs is cheaper than caching them")
     public static abstract class ExtractRuntimeJars extends DefaultTask {
 
         @OutputDirectory

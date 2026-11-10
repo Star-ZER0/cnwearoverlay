@@ -1,25 +1,47 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
 
+val releaseProperties = Properties().apply {
+    rootProject.file("../version.properties").inputStream().use { load(it) }
+}
+val releaseKeystore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+
 android {
     namespace = "cc.star0.wear.xposed.cnwearoverlay"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "cc.star0.wear.xposed.cnwearoverlay"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = releaseProperties.getProperty("versionCode").toInt()
+        versionName = releaseProperties.getProperty("version")
         ndk {
             // 只保留 arm64-v8a 和 armeabi-v7a 架构
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

@@ -1,0 +1,53 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Grant execute permission
+        working-directory: xposed
+        run: chmod +x ./gradlew
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Build Gradle plugin
+        run: ./xposed/gradlew -p . :plugin:build --no-daemon --stacktrace
+
+      - name: Build Xposed APKs
+        run: ./xposed/gradlew -p xposed :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: xposed-${{ github.sha }}
+          path: |
+            xposed/app/build/outputs/apk/debug/*.apk
+            xposed/app/build/outputs/apk/release/*.apk
+            xposed/app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 14

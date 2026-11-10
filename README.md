@@ -9,6 +9,30 @@
 
 ## Gradle 插件使用说明
 
+### 从 Maven Central 接入
+
+在应用项目的 `settings.gradle.kts` 中配置插件仓库：
+
+```kotlin
+pluginManagement {
+    repositories {
+        mavenCentral() // 必须有此行
+    }
+}
+```
+
+在应用模块的 `build.gradle.kts` 中添加插件，版本替换为实际已发布的版本：
+
+```kotlin
+plugins {
+    id("cc.star0.wear.lib.cnwearoverlay") version "1.2.1"
+}
+```
+
+插件坐标为 `cc.star0.wear.lib:cnwearoverlay:<version>`；发布时也会提供插件 marker，因此可直接通过上面的 `plugins` DSL 使用。无需添加 runtime 依赖。
+
+### 从源码接入
+
 在应用项目根目录（`settings.gradle.kts` 所在目录）把本仓库添加为 git submodule：
 
 ```
@@ -95,10 +119,18 @@ cd xposed
 
 ```bash
 cd xposed
-gradlew :app:assembleRelease
+./gradlew :app:assembleRelease
 ```
 
 Xposed 工程使用 Gradle **9.7.1**、AGP **9.3.3**、Android SDK **37**，Java 源码目标版本为 **17**。
+
+未提供签名环境变量时，Release APK 为未签名产物。
+
+### 自动构建与发布
+
+- 推送任意分支的提交、创建或更新 PR 时，[Build](.github/workflows/build.yml) 会构建插件与 Xposed Debug / Release APK；APK 和 R8 mapping 可从 Actions artifacts 下载，保留 14 天。Debug APK 使用临时调试签名，Release APK 未签名。
+- 推送版本 tag（如 `1.2.1` 或 `v1.2.1`）时，[Release](.github/workflows/release.yml) 会校验共享版本号，构建并验证正式签名 APK，发布 GitHub Release，并将 Gradle 插件及 marker 发布到 Maven Central。
+- 插件版本、APK `versionName` 和 `versionCode` 统一维护在 [version.properties](version.properties)。首次使用须先配置签名与 Central Portal 凭据。
 
 ## 兼容范围
 

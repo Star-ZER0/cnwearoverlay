@@ -1,9 +1,60 @@
+import com.vanniktech.maven.publish.DeploymentValidation
+import com.vanniktech.maven.publish.GradlePlugin
+import com.vanniktech.maven.publish.JavadocJar
+import java.util.Properties
+
 plugins {
     `java-gradle-plugin`
+    id("com.vanniktech.maven.publish") version "0.37.0"
+}
+
+val releaseProperties = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
 }
 
 group = "cc.star0.wear.lib"
-version = "1.2.0"
+version = releaseProperties.getProperty("version")
+
+mavenPublishing {
+    configure(GradlePlugin(javadocJar = JavadocJar.Javadoc()))
+    coordinates(group.toString(), "cnwearoverlay", version.toString())
+    publishToMavenCentral(automaticRelease = true, validateDeployment = DeploymentValidation.PUBLISHED)
+    // 发布时通过 signAllPublications=true 启用 GPG 签名，普通构建无需密钥。
+    pom {
+        name.set("CN Wear Overlay Gradle Plugin")
+        description.set("A plugin providing Wear Compose compatibility for Chinese smartwatch brands such as Xiaomi and OPPO.")
+        url.set("https://github.com/Star-ZER0/cnwearoverlay")
+        licenses {
+            license {
+                name.set("Apache-2.0 with LLVM-exception")
+                url.set("https://github.com/Star-ZER0/cnwearoverlay/blob/HEAD/LICENSE")
+                distribution.set("repo")
+            }
+        }
+        developers {
+            developer {
+                id.set("Star-ZER0")
+                name.set("Star_ZER0")
+                url.set("https://github.com/Star-ZER0")
+            }
+        }
+        scm {
+            url.set("https://github.com/Star-ZER0/cnwearoverlay")
+            connection.set("scm:git:https://github.com/Star-ZER0/cnwearoverlay.git")
+            developerConnection.set("scm:git:ssh://git@github.com/Star-ZER0/cnwearoverlay.git")
+        }
+    }
+}
+
+tasks.withType<Jar>().matching { it.name == "sourcesJar" }.configureEach {
+    // 插件内嵌的 runtime 也随源码包分发；编译用 Android 桩不属于运行时实现。
+    from("../runtime/src/main/java")
+    exclude("cnwearoverlay-*.jar")
+}
+
+tasks.named<Jar>("jar") {
+    from(rootProject.file("LICENSE")) { into("META-INF") }
+}
 
 java {
     // 与 xposed 构建统一使用 Java 17。
