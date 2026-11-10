@@ -18,7 +18,7 @@ version = releaseProperties.getProperty("version")
 mavenPublishing {
     configure(GradlePlugin(javadocJar = JavadocJar.Javadoc()))
     coordinates(group.toString(), "cnwearoverlay", version.toString())
-    publishToMavenCentral(automaticRelease = true, validateDeployment = DeploymentValidation.PUBLISHED)
+    publishToMavenCentral(automaticRelease = true, validateDeployment = DeploymentValidation.VALIDATED)
     // 发布时通过 signAllPublications=true 启用 GPG 签名，普通构建无需密钥。
     pom {
         name.set("CN Wear Overlay Gradle Plugin")
