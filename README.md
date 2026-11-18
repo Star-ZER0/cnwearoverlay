@@ -1,5 +1,10 @@
 # CN Wear Overlay
 
+[![Build](https://github.com/Star-ZER0/cnwearoverlay/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Star-ZER0/cnwearoverlay/actions/workflows/build.yml)
+[![Release](https://github.com/Star-ZER0/cnwearoverlay/actions/workflows/release.yml/badge.svg)](https://github.com/Star-ZER0/cnwearoverlay/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/Star-ZER0/cnwearoverlay?display_name=tag)](https://github.com/Star-ZER0/cnwearoverlay/releases/latest)
+[![Maven Central](https://img.shields.io/maven-central/v/cc.star0.wear.lib/cnwearoverlay?label=Maven%20Central)](https://central.sonatype.com/artifact/cc.star0.wear.lib/cnwearoverlay)
+
 ## 项目用途
 - 为小米 / OPPO 手表补充 Wear Compose 表冠触觉震动
 - 修复小米手表因缺少 `com.google.wear.input.WearHapticFeedbackConstants` 导致的 `ClassNotFoundException` 闪退崩溃
