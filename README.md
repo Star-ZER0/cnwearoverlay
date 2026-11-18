@@ -1,6 +1,9 @@
 # CN Wear Overlay
 
-为小米 / OPPO 手表补充 Wear Compose 表冠触觉兼容，并修复小米部分触觉反馈常量导致的震感异常：将 `CLOCK_TICK` / `SEGMENT_FREQUENT_TICK` 映射为 `SEGMENT_TICK`。
+## 项目用途
+- 为小米 / OPPO 手表补充 Wear Compose 表冠触觉震动
+- 修复小米手表因缺少 `com.google.wear.input.WearHapticFeedbackConstants` 导致的 `ClassNotFoundException` 闪退崩溃
+- 修复小米手表部分触觉反馈常量 `CLOCK_TICK` / `SEGMENT_FREQUENT_TICK` 魔改导致的震感异常
 
 > [!NOTE]
 > 本项目仍处于较早期阶段，暂时仅支持 Xiaomi Watch 5 系列、OPPO Watch 全智能系列 及其更新产品。其他设备尚待适配，兼容性未经验证。
