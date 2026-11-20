@@ -26,7 +26,7 @@ mavenPublishing {
         url.set("https://github.com/Star-ZER0/cnwearoverlay")
         licenses {
             license {
-                name.set("Apache-2.0 with LLVM-exception")
+                name.set("Apache-2.0 with LLVM Exceptions")
                 url.set("https://github.com/Star-ZER0/cnwearoverlay/blob/HEAD/LICENSE")
                 distribution.set("repo")
             }
