@@ -15,7 +15,7 @@
 
 ## Todo List
 
-- [ ] 缓解在没有 Google 私有库的设备上使用时调用私有类导致的 `ClassNotFoundException` 闪退崩溃
+- [ ] 缓解在没有 Google 私有库的设备上使用时调用私有类导致的 `ClassNotFoundException`, `NoClassDefFoundError` 闪退崩溃
 - [ ] 创建表冠速率归一因数，尽可能统一不同设备之间的表冠的滚动速度
 - [ ] 支持基于安卓的华为手表设备
 
