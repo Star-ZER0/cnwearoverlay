@@ -13,13 +13,21 @@
 > [!NOTE]
 > 本项目仍处于较早期阶段，暂时仅支持 Xiaomi Watch 5 系列、OPPO Watch 全智能系列 及其更新产品。其他设备尚待适配，兼容性未经验证。
 
+## Todo List
+
+- [ ] 缓解在没有 Google 私有库的设备上使用时调用私有类导致的 `ClassNotFoundException` 闪退崩溃
+- [ ] 创建表冠速率归一因数，尽可能统一不同设备之间的表冠的滚动速度
+- [ ] 支持基于安卓的华为手表设备
+
 项目提供两种接入方式：可修改应用源码时使用 **Gradle 插件**；需要在应用进程内安装 Hook 时使用 **Xposed 模块**。运行时根据系统类识别设备，检测到系统自带 Google Wear 触觉 SDK 时不介入。
 
 ## Gradle 插件使用说明
 
 ### 从 Maven Central 接入
 
-在应用项目的 `settings.gradle.kts` 中配置插件仓库：
+1.在右上角给本仓库点上Star
+
+2.在应用项目的 `settings.gradle.kts` 中配置插件仓库：
 
 ```kotlin
 pluginManagement {
@@ -29,7 +37,7 @@ pluginManagement {
 }
 ```
 
-在应用模块的 `build.gradle.kts` 中添加插件，版本替换为实际已发布的版本：
+3.在应用模块的 `build.gradle.kts` 中添加插件，版本替换为实际已发布的版本：
 
 ```kotlin
 plugins {
@@ -41,7 +49,9 @@ plugins {
 
 ### 从源码接入
 
-在应用项目根目录（`settings.gradle.kts` 所在目录）把本仓库添加为 git submodule：
+1.在右上角给本仓库点上Star
+
+2.在应用项目根目录（`settings.gradle.kts` 所在目录）把本仓库添加为 git submodule：
 
 ```
 git submodule add https://github.com/Star-ZER0/cnwearoverlay.git cnwearoverlay
@@ -49,7 +59,7 @@ git submodule add https://github.com/Star-ZER0/cnwearoverlay.git cnwearoverlay
 
 后续升级时只需执行 `git submodule update --remote cnwearoverlay` 即可自动同步本仓库。
 
-在应用项目的 `settings.gradle.kts` 中，将 `includeBuild` 加入已有的 `pluginManagement` 块，保留原有配置：
+3.在应用项目的 `settings.gradle.kts` 中，将 `includeBuild` 加入已有的 `pluginManagement` 块，保留原有配置：
 
 ```kotlin
 pluginManagement {
@@ -58,7 +68,7 @@ pluginManagement {
 }
 ```
 
-在应用模块（通常为 `app/`）的 `build.gradle.kts` 中，将插件 ID 加入已有的 `plugins` 块：
+4.在应用模块（通常为 `app/`）的 `build.gradle.kts` 中，将插件 ID 加入已有的 `plugins` 块：
 
 ```kotlin
 plugins {
@@ -110,7 +120,7 @@ adb logcat -b main -b system -b crash -v threadtime -T 1 "*:V" > cnwearoverlay-l
 
 `xposed/` 是独立 Android 工程，使用 libxposed API 102。模块在目标应用的 `onPackageReady` 回调中安装 Hook，并在缺失 Wear SDK 时追加兼容 DEX。
 
-构建、签名并安装 APK 后，在支持对应现代 libxposed API 的框架（如 LSPosed）中启用模块并选择目标应用作用域，然后重新启动目标应用。模块没有独立配置界面；当前只处理应用进程。LSPatch 等内嵌框架场景需确认所用版本支持对应 API，并在目标设备验证。
+下载并安装模块 APK 后，在支持对应现代 libxposed API 的框架（如 LSPosed）中启用模块并选择目标应用作用域，然后重新启动目标应用。模块没有独立配置界面；当前只处理应用进程。LSPatch 等内嵌框架场景需确认所用版本支持对应 API，并在目标设备验证。
 
 ### 构建 Xposed 模块
 
