@@ -1,7 +1,6 @@
 package cc.star0.wear.lib.cnwearoverlay.runtime;
 
 import android.content.Context;
-import android.provider.Settings;
 import android.view.View;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -13,8 +12,6 @@ final class OppoLegacyHaptics extends BaseOverlay {
     private static final String SCROLL_FEEDBACK_CLASS = "android.view.HapticScrollFeedbackProvider";
     private static final int SCROLL_FEEDBACK = 12;
     private static final int SCROLL_EFFECT = 302;
-    private static final int IGNORE_VIEW_SETTING = 1;
-    private static final int IGNORE_GLOBAL_SETTING = 2;
 
     OppoLegacyHaptics() {
         super(SCROLL_FEEDBACK, SCROLL_FEEDBACK, SCROLL_FEEDBACK);
@@ -45,24 +42,12 @@ final class OppoLegacyHaptics extends BaseOverlay {
         if (OverlayLog.enabled()) {
             OverlayLog.debug("haptic legacy request constant=12 effect=302 strength=2 flags=" + flags);
         }
-        // 直接调用马达服务绕过了 View / WindowManager，需在这里保留它们的触觉开关语义。
-        if (!view.isAttachedToWindow()) {
-            OverlayLog.debug("haptic legacy skipped: view detached");
+        if (!canPerformDirectHaptic(view, flags, "haptic legacy")) {
             return false;
         }
-        if (!view.isHapticFeedbackEnabled() && (flags & IGNORE_VIEW_SETTING) == 0) {
-            OverlayLog.debug("haptic legacy skipped: view haptics disabled");
-            return false;
-        }
-        String stage = "settings";
+        String stage = "resolve_api";
         try {
             Context context = view.getContext();
-            if ((flags & IGNORE_GLOBAL_SETTING) == 0
-                    && Settings.System.getInt(context.getContentResolver(),
-                            "haptic_feedback_enabled", 0) == 0) {
-                OverlayLog.debug("haptic legacy skipped: system haptics disabled or setting absent");
-                return false;
-            }
             stage = "resolve_api";
             Api api = Api.INSTANCE;
             if (api == null) {

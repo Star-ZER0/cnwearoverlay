@@ -30,20 +30,22 @@ import org.gradle.work.DisableCachingByDefault;
 /**
  * CN Wear Overlay Gradle 插件（主方案）。
  * 让 androidx.wear.compose.foundation.rotary（Haptics.kt，依赖库不可修改）的表冠触觉
- * 在小米 / OPPO 手表上正常工作，无需修改任何业务代码：
+ * 在小米 / OPPO / 华为手表上正常工作，无需修改任何业务代码：
  *   - 层 1：包装 {@code HapticsKt.getCustomRotaryConstants(View)} ——
  *       小米返回 (19,18,20)（SCROLL_*，经小米注入映射为 210 表冠旋转），
- *       OPPO 返回 (12,12,12)（MODERN 由系统播放 302，LEGACY 由运行时直接播放）。
+ *       OPPO 返回 (12,12,12)（MODERN 由系统播放 302，LEGACY 由运行时直接播放），
+ *       华为返回 (19,18,20)（由运行时通过 VibratorEx 播放 watchhaptic.crown.*）。
  *   - 层 2：包装 {@code HapticsKt.hasWearSDK(Context)}（OPPO API 30 上恒为 false，
  *       需强制为 true 走 WearSDK 常量路径）+ 注入
  *       {@code com.google.wear.input.WearHapticFeedbackConstants} 桩类
- *       （小米/OPPO 系统无此类，缺失时 wear-compose 会 NoClassDefFoundError；
+ *       （小米/OPPO/华为系统无此类，缺失时 wear-compose 会 NoClassDefFoundError；
  *       在真 Wear OS 上 boot classpath 中的真实类优先，桩类不生效）。
  *   - 层 3：重写 app 内所有 {@code View.performHapticFeedback(I)/(II)} 调用点为
  *       运行时代理，仅在小米系统上把 CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27)
  *       映射为 SEGMENT_TICK(26)，修复震感异常（小米系统将 4/27 映射到 TEXTURE_TICK(21)，
- *       而 26 走 EFFECT_TICK -> 210 表冠旋转）。旧 OPPO 的 12 直接播放 302，失败不回退。
- *       关闭小米重映射时，patchHapticsKt 仍代理 rotary 包内的旧 OPPO 触觉调用。
+ *       而 26 走 EFFECT_TICK -> 210 表冠旋转）。旧 OPPO 的 12 直接播放 302，
+ *       华为的 19/18/20 通过 VibratorEx 播放表冠波形，失败均不回退。
+ *       关闭小米重映射时，patchHapticsKt 仍代理 rotary 包内的旧 OPPO 与华为触觉调用。
  * 使用方式：将本仓库放到目标项目中，{@code settings.gradle.kts} 加
  * {@code includeBuild("cnwearoverlay")}（指向仓库根目录），app 模块 {@code plugins { id("cc.star0.wear.lib.cnwearoverlay") }}。
  */

@@ -6,7 +6,7 @@ import android.view.View;
 
 /**
  * Gradle 插桩、Google Wear 桩类和 Xposed 共用的稳定入口。
- * 基础行为由 BaseOverlay 提供，平台差异分别由小米、OPPO 现代与传统组件处理。
+ * 基础行为由 BaseOverlay 提供，平台差异分别由小米、OPPO 现代/传统及华为组件处理。
  */
 public final class CnWearOverlay {
     private static final String GOOGLE_WEAR_CONSTANTS_CLASS =
@@ -30,6 +30,10 @@ public final class CnWearOverlay {
 
     public static boolean isOppoLegacy() {
         return component() instanceof OppoLegacyHaptics;
+    }
+
+    public static boolean isHuawei() {
+        return component() instanceof HuaweiHaptics;
     }
 
     public static boolean isActive() {
@@ -66,6 +70,10 @@ public final class CnWearOverlay {
         if (OppoLegacyHaptics.isAvailable()) {
             OverlayLog.debug("platform=OPPO_LEGACY active=true");
             return new OppoLegacyHaptics();
+        }
+        if (HuaweiHaptics.isAvailable()) {
+            OverlayLog.debug("platform=HUAWEI active=true");
+            return new HuaweiHaptics();
         }
         OverlayLog.debug("platform=UNKNOWN active=false");
         return new BaseOverlay();
@@ -120,6 +128,12 @@ public final class CnWearOverlay {
     /** 供已确认 OPPO_LEGACY 且常量为 12 的 Xposed Hook 调用，不重入 View。 */
     public static boolean performOppoLegacyScrollFeedback(View view, int flags) {
         return OppoLegacyHaptics.perform(view, flags);
+    }
+
+    /** 供已确认 HUAWEI 且常量为表冠反馈的 Xposed Hook 调用，不重入 View。 */
+    public static boolean performHuaweiRotaryFeedback(
+            View view, int feedbackConstant, int flags) {
+        return HuaweiHaptics.perform(view, feedbackConstant, flags);
     }
 
     /** 调用方负责回收 OPPO 表冠转换产生的事件副本。 */

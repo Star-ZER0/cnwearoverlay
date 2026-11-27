@@ -3,13 +3,14 @@ package com.google.wear.input;
 /**
  * com.google.wear.input.WearHapticFeedbackConstants 桩类。
  *
- * Google Wear OS 的系统私有库，小米/OPPO 手表上不存在 wear-compose 的
+ * Google Wear OS 的系统私有库，小米/OPPO/华为手表上不存在 wear-compose 的
  * WearSDKHapticConstants 初始化时会 NoClassDefFoundError 或静默禁用触觉。
  *
  * 类加载规则（parent-first）：真 Wear OS 上 boot classpath 中的真实类优先，本桩类不生效；
- * 仅在缺失该类的系统（小米/OPPO）上被加载，返回值由运行时按系统触觉库自适应：
+ * 仅在缺失该类的系统（小米/OPPO/华为）上被加载，返回值由运行时按系统触觉库自适应：
  * 小米 19/18/20（SCROLL_*，表冠旋转链路），OPPO 12/12/12（MODERN 交给系统，
- * LEGACY 需由触觉代理 / View Hook 直接播放滚动波形 302）。
+ * LEGACY 需由触觉代理 / View Hook 直接播放滚动波形 302），华为 19/18/20
+ * （由触觉代理 / View Hook 直接通过 VibratorEx 播放 watchhaptic.crown.*）。
  */
 public final class WearHapticFeedbackConstants {
 
