@@ -11,9 +11,10 @@ import java.lang.reflect.Method;
  * Hook 安装（全部在应用进程内，不触碰 system_server / 系统服务进程）：
  *   - 目标 1：hook {@code android.view.View.performHapticFeedback(int)/(int,int)}
  *       —— 仅小米设备把 CLOCK_TICK(4)/SEGMENT_FREQUENT_TICK(27) 重映射为 SEGMENT_TICK(26)；
- *       —— 旧 OPPO 的 12 直接播放 302，失败返回 false；其余设备与常量直接放行。
+ *       —— 旧 OPPO 的 12 直接播放 302，华为的 19/18/20 通过 VibratorEx 直接播放表冠波形，
+ *          失败返回 false；其余设备与常量直接放行。
  *   - 目标 2：hook {@code androidx...rotary.HapticsKt.getCustomRotaryConstants(View)}
- *       —— 小米返回 (19,18,20)、OPPO 返回 (12,12,12) 的 HapticConstants，
+ *       —— 小米与华为返回 (19,18,20)、OPPO 返回 (12,12,12) 的 HapticConstants，
  *       提前返回从而不会触碰系统缺失的 com.google.wear.input.WearHapticFeedbackConstants
  *       （原逻辑在小米 API35 上会 NoClassDefFoundError，在 OPPO API30 上恒落禁用分支）。
  *   - 目标 3：仅 OPPO，将 Compose 收到的单指鼠标滚轮转换为 rotary 输入；
@@ -33,7 +34,7 @@ final class Hooks {
         if (!platform.isActive()) {
             return;
         }
-        if (platform.isXiaomi() || platform.isOppoLegacy()) {
+        if (platform.isXiaomi() || platform.isOppoLegacy() || platform.isHuawei()) {
             hookViewPerformHapticFeedback(xp, platform);
         }
         if (platform.isOppo()) {
@@ -75,6 +76,10 @@ final class Hooks {
                                     return CnWearOverlay.performOppoLegacyScrollFeedback(
                                             (View) chain.getThisObject(), 0);
                                 }
+                                if (platform.needsHuaweiRotaryFeedback(fc)) {
+                                    return CnWearOverlay.performHuaweiRotaryFeedback(
+                                            (View) chain.getThisObject(), fc, 0);
+                                }
                                 int mapped = platform.remapFeedbackConstant(fc);
                                 if (mapped != fc) {
                                     return chain.proceed(new Object[] {mapped});
@@ -97,6 +102,12 @@ final class Hooks {
                                 if (platform.needsLegacyScrollFeedback(fc)) {
                                     return CnWearOverlay.performOppoLegacyScrollFeedback(
                                             (View) chain.getThisObject(), (Integer) chain.getArg(1));
+                                }
+                                if (platform.needsHuaweiRotaryFeedback(fc)) {
+                                    return CnWearOverlay.performHuaweiRotaryFeedback(
+                                            (View) chain.getThisObject(),
+                                            fc,
+                                            (Integer) chain.getArg(1));
                                 }
                                 int mapped = platform.remapFeedbackConstant(fc);
                                 if (mapped != fc) {
