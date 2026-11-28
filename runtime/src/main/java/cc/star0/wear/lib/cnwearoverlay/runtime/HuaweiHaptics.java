@@ -3,6 +3,7 @@ package cc.star0.wear.lib.cnwearoverlay.runtime;
 import android.view.View;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** 华为组件：通过系统 VibratorEx 播放表冠命名波形，不回退到 AOSP 常量。 */
 final class HuaweiHaptics extends BaseOverlay {
@@ -11,10 +12,11 @@ final class HuaweiHaptics extends BaseOverlay {
     private static final int SCROLL_TICK = 18;
     private static final int SCROLL_LIMIT = 20;
     private static final String EFFECT_CROWN_TICK = "watchhaptic.crown.strength1";
+    private static final String EFFECT_CROWN_FOCUS = "watchhaptic.crown.strength2";
     private static final String EFFECT_CROWN_LIMIT = "watchhaptic.crown.strength3";
 
-    private static volatile Boolean tickSupported;
-    private static volatile Boolean limitSupported;
+    private static final ConcurrentHashMap<String, Boolean> SUPPORTED_EFFECTS =
+            new ConcurrentHashMap<>();
 
     HuaweiHaptics() {
         super(SCROLL_ITEM_FOCUS, SCROLL_TICK, SCROLL_LIMIT);
@@ -85,24 +87,23 @@ final class HuaweiHaptics extends BaseOverlay {
 
     private static String resolveEffect(Api api, Object vibrator, int feedbackConstant)
             throws ReflectiveOperationException {
-        if (feedbackConstant == SCROLL_LIMIT && isSupported(api, vibrator, EFFECT_CROWN_LIMIT)) {
-            return EFFECT_CROWN_LIMIT;
-        }
-        return isSupported(api, vibrator, EFFECT_CROWN_TICK) ? EFFECT_CROWN_TICK : null;
+        String effect = switch (feedbackConstant) {
+            case SCROLL_TICK -> EFFECT_CROWN_TICK;
+            case SCROLL_ITEM_FOCUS -> EFFECT_CROWN_FOCUS;
+            case SCROLL_LIMIT -> EFFECT_CROWN_LIMIT;
+            default -> null;
+        };
+        return effect != null && isSupported(api, vibrator, effect) ? effect : null;
     }
 
     private static boolean isSupported(Api api, Object vibrator, String effect)
             throws ReflectiveOperationException {
-        Boolean cached = EFFECT_CROWN_LIMIT.equals(effect) ? limitSupported : tickSupported;
+        Boolean cached = SUPPORTED_EFFECTS.get(effect);
         if (cached != null) {
             return cached;
         }
         boolean supported = Boolean.TRUE.equals(api.isSupportHwVibrator.invoke(vibrator, effect));
-        if (EFFECT_CROWN_LIMIT.equals(effect)) {
-            limitSupported = supported;
-        } else {
-            tickSupported = supported;
-        }
+        SUPPORTED_EFFECTS.putIfAbsent(effect, supported);
         if (OverlayLog.enabled()) {
             OverlayLog.debug("haptic huawei support effect=" + effect + " supported=" + supported);
         }

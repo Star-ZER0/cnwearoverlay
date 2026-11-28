@@ -157,7 +157,7 @@ Xposed 工程使用 Gradle **9.7.1**、AGP **9.3.3**、Android SDK **37**，Java
 - 小米的表冠常量为 `(19, 18, 20)`，OPPO 为 `(12, 12, 12)`，华为为 `(19, 18, 20)`，顺序为 focus / tick / limit。
 - OPPO 鼠标滚轮转 rotary 时，MODERN 仅接受设备名精确为 `oplus_crown` 的输入，LEGACY 不限制设备名；两者均要求单指 `ACTION_SCROLL` 及有限非零的 `AXIS_VSCROLL`。
 - OPPO 按系统类区分两代：同时存在 `android.os.linearmotorvibrator.LinearmotorVibrator` 和 `android.view.HapticScrollFeedbackProvider` 为 `OPPO_MODERN`，仅存在前者为 `OPPO_LEGACY`。MODERN 将 `12` 交给系统；LEGACY 直接播放表冠波形 `302`（强度 `2`、不循环），保留 View / 系统触觉开关及调用 flags 的语义。反射、服务或权限不可用时返回 `false`。
-- 华为（`HUAWEI`）通过 boot classpath 中的 `com.huawei.android.os.VibratorEx` 识别；向 Compose 提供 `(19, 18, 20)`，拦截表冠触觉调用并反射调用 `VibratorEx.isSupportHwVibrator` / `setHwVibrator`，tick / focus 播放 `watchhaptic.crown.strength1`，limit 优先播放 `watchhaptic.crown.strength3`（不支持时回退到 `strength1`），保留 View / 系统触觉开关及调用 flags 语义。不支持、无 `VIBRATE` 权限或反射异常时返回 `false`；输入侧本身为标准 `SOURCE_ROTARY_ENCODER`，无需转换。
+- 华为（`HUAWEI`）通过 boot classpath 中的 `com.huawei.android.os.VibratorEx` 识别；向 Compose 提供 `(19, 18, 20)`，拦截表冠触觉调用并反射调用 `VibratorEx.isSupportHwVibrator` / `setHwVibrator`，`tick(18)` 播放 `watchhaptic.crown.strength1`、`focus(19)` 播放 `watchhaptic.crown.strength2`、`limit(20)` 播放 `watchhaptic.crown.strength3`，保留 View / 系统触觉开关及调用 flags 语义。不支持、无 `VIBRATE` 权限或反射异常时返回 `false`；输入侧本身为标准 `SOURCE_ROTARY_ENCODER`，无需转换。
 - Xposed 声明 `minSdk 26`，独立 Wear SDK bridge DEX 按 `min-api 29` 生成；低版本系统的完整功能兼容性尚需验证。
 - Xposed 按名称查找 Compose 类。目标应用混淆这些名称后，Compose Hook 可能跳过；View Hook 与 SDK bridge 仍会分别尝试安装，实际效果取决于目标应用和设备。
 

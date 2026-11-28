@@ -134,7 +134,7 @@ git diff --check
   - 反射失败、无服务/权限、不支持或降级时直接返回 `false`。
 - **`HUAWEI` 直连播放**（`HuaweiHaptics.perform`）：
   - 同样先经过 `canPerformDirectHaptic` 检查。
-  - `SCROLL_LIMIT(20)` 优先检查并播放 `watchhaptic.crown.strength3`，不支持时回退到 `watchhaptic.crown.strength1`；`SCROLL_ITEM_FOCUS(19)` / `SCROLL_TICK(18)` 播放 `watchhaptic.crown.strength1`。结果会按效果名缓存在 `tickSupported` / `limitSupported` 中。
+  - `SCROLL_TICK(18)` 对应 `watchhaptic.crown.strength1`、`SCROLL_ITEM_FOCUS(19)` 对应 `watchhaptic.crown.strength2`、`SCROLL_LIMIT(20)` 对应 `watchhaptic.crown.strength3`，均直接检查支持性并播放，不在档位间回退。结果会按效果名缓存在 `SUPPORTED_EFFECTS` 中。
   - 反射或支持检查失败直接返回 `false`。
 - **OPPO 鼠标滚轮转 Rotary**（`BaseOverlay.rotaryEvent`）：
   - 仅在 `isOppo()` 为真时生效，要求：`ACTION_SCROLL`、来源包含 `SOURCE_MOUSE` 且不包含 `SOURCE_ROTARY_ENCODER`、`pointerCount == 1`、`AXIS_VSCROLL` 为有限非零浮点数，且满足对应代际的设备名条件。
