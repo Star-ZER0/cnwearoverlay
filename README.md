@@ -6,18 +6,18 @@
 [![Maven Central](https://img.shields.io/maven-central/v/cc.star0.wear.lib/cnwearoverlay?label=Maven%20Central)](https://central.sonatype.com/artifact/cc.star0.wear.lib/cnwearoverlay)
 
 ## 项目用途
-- 为小米 / OPPO 手表补充 Wear Compose 表冠触觉震动
-- 修复小米手表因缺少 `com.google.wear.input.WearHapticFeedbackConstants` 导致的 `ClassNotFoundException` 闪退崩溃
+- 为小米 / OPPO / 华为手表补充 Wear Compose 表冠触觉震动
+- 修复小米 / OPPO / 华为手表因缺少 `com.google.wear.input.WearHapticFeedbackConstants` 导致的 `ClassNotFoundException` 闪退崩溃
 - 修复小米手表部分触觉反馈常量 `CLOCK_TICK` / `SEGMENT_FREQUENT_TICK` 魔改导致的震感异常
 
 > [!NOTE]
-> 本项目仍处于较早期阶段，暂时仅支持 Xiaomi Watch 5 系列、OPPO Watch 全智能系列 及其更新产品。其他设备尚待适配，兼容性未经验证。
+> 本项目仍处于较早期阶段，暂时仅支持 Xiaomi Watch 5 系列、OPPO Watch 全智能系列及部分基于安卓的 HUAWEI WATCH 设备（ WATCH 3 / WATCH 4 系列）。其他设备尚待适配，兼容性未经验证。
 
 ## Todo List
 
+- [x] 支持基于安卓的华为手表设备
 - [ ] 缓解在没有 Google 私有库的设备上使用时调用私有类导致的 `ClassNotFoundException`, `NoClassDefFoundError` 闪退崩溃
 - [ ] 创建表冠速率归一因数，尽可能统一不同设备之间的表冠的滚动速度
-- [ ] 支持基于安卓的华为手表设备
 
 项目提供两种接入方式：可修改应用源码时使用 **Gradle 插件**；需要在应用进程内安装 Hook 时使用 **Xposed 模块**。运行时根据系统类识别设备，检测到系统自带 Google Wear 触觉 SDK 时不介入。
 
@@ -94,8 +94,8 @@ cnWearOverlay {
 | 选项 | 作用 |
 | --- | --- |
 | `enabled` | 总开关；关闭后不注入运行时或修改 ASM 字节码 |
-| `patchHapticsKt` | 适配 Wear Compose 的表冠常量、输入和旧版 OPPO 触觉调用；不依赖小米重映射开关 |
-| `remapXiaomiConstants` | 将应用及依赖的 `View.performHapticFeedback` 调用接入运行时代理，重映射小米常量，并支持旧版 OPPO 的 `12` → `302` 路径 |
+| `patchHapticsKt` | 适配 Wear Compose 的表冠常量、输入（OPPO）和旧版 OPPO / 华为触觉调用；不依赖小米重映射开关 |
+| `remapXiaomiConstants` | 将应用及依赖的 `View.performHapticFeedback` 调用接入运行时代理，重映射小米常量，并支持旧版 OPPO 的 `12` → `302` 与华为的 `19/18/20` → `VibratorEx` 路径 |
 | `generateStub` | 注入缺失的 `com.google.wear.input.WearHapticFeedbackConstants` 桩类；与 `patchHapticsKt` 同时开启时才包装 `hasWearSDK` |
 
 插件应用于 `com.android.application` 模块；应用于 Android library 模块时仅提示，不执行修改。运行时 JAR 和所需 R8 规则会自动注入，无需手动复制。
@@ -154,10 +154,10 @@ Xposed 工程使用 Gradle **9.7.1**、AGP **9.3.3**、Android SDK **37**，Java
 
 - Gradle 插件编译依赖 AGP API **9.4.1**，使用方的 AGP 兼容性需随具体项目验证。
 - 当前 Compose 补丁针对 Wear Compose **1.6.2** 的类结构与方法签名；升级依赖后需重新验证。
-- 小米的表冠常量为 `(19, 18, 20)`，OPPO 为 `(12, 12, 12)`，顺序为 focus / tick / limit。
+- 小米的表冠常量为 `(19, 18, 20)`，OPPO 为 `(12, 12, 12)`，华为为 `(19, 18, 20)`，顺序为 focus / tick / limit。
 - OPPO 鼠标滚轮转 rotary 时，MODERN 仅接受设备名精确为 `oplus_crown` 的输入，LEGACY 不限制设备名；两者均要求单指 `ACTION_SCROLL` 及有限非零的 `AXIS_VSCROLL`。
-- OPPO 按系统类区分两代：同时存在 `android.os.linearmotorvibrator.LinearmotorVibrator` 和 `android.view.HapticScrollFeedbackProvider` 为 `OPPO_MODERN`，仅存在前者为 `OPPO_LEGACY`。MODERN 将 `12` 交给系统；LEGACY 直接播放表冠波形 `302`（强度 `2`、不循环），保留 View / 系统触觉开关及调用 flags 的语义。反射、服务或权限不可用时返回 `false`，不回退到 `VIRTUAL_KEY(1)` 或其他震动效果。
-- 两个 OTA 的静态核验覆盖 OWW261 / OWW231；LEGACY 使用厂商隐藏 API，普通应用与 Xposed 环境中的可用性、实际震感仍需真机验证。
+- OPPO 按系统类区分两代：同时存在 `android.os.linearmotorvibrator.LinearmotorVibrator` 和 `android.view.HapticScrollFeedbackProvider` 为 `OPPO_MODERN`，仅存在前者为 `OPPO_LEGACY`。MODERN 将 `12` 交给系统；LEGACY 直接播放表冠波形 `302`（强度 `2`、不循环），保留 View / 系统触觉开关及调用 flags 的语义。反射、服务或权限不可用时返回 `false`。
+- 华为（`HUAWEI`）通过 boot classpath 中的 `com.huawei.android.os.VibratorEx` 识别；向 Compose 提供 `(19, 18, 20)`，拦截表冠触觉调用并反射调用 `VibratorEx.isSupportHwVibrator` / `setHwVibrator`，`tick(18)` 播放 `watchhaptic.crown.strength1`、`focus(19)` 播放 `watchhaptic.crown.strength2`、`limit(20)` 播放 `watchhaptic.crown.strength3`，保留 View / 系统触觉开关及调用 flags 语义。不支持、无 `VIBRATE` 权限或反射异常时返回 `false`；输入侧本身为标准 `SOURCE_ROTARY_ENCODER`，无需转换。
 - Xposed 声明 `minSdk 26`，独立 Wear SDK bridge DEX 按 `min-api 29` 生成；低版本系统的完整功能兼容性尚需验证。
 - Xposed 按名称查找 Compose 类。目标应用混淆这些名称后，Compose Hook 可能跳过；View Hook 与 SDK bridge 仍会分别尝试安装，实际效果取决于目标应用和设备。
 

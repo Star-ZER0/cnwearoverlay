@@ -1,231 +1,208 @@
-# 项目协作说明
+# AGENTS.md
 
-本文提供仓库导航、实现背景和验证建议，帮助后续修改快速落地。以当前用户任务和实际代码为准；常规实现、整理、修复及验证可以直接推进，无需为一般技术选择反复确认。以下约定可随项目演进调整，不要求每次任务执行全部检查。
+本文面向在本仓库工作的开发与协作代理，提供项目架构、关键约束、构建命令与验证指引。所有内容以当前仓库代码与构建脚本为准；面向最终用户的使用说明请同步维护在 [README.md](README.md)。
 
 ## 项目目标
 
-CN Wear Overlay 为小米 / OPPO 手表适配 Wear Compose 表冠触觉，并修复小米部分 `View.performHapticFeedback` 常量导致的震感异常。仓库包含构建期插桩和运行期 Xposed Hook 两种方案，主要设备语义应保持一致。
+**CN Wear Overlay** 为缺少完整 Google Wear SDK 或存在厂商魔改触觉实现的国产安卓智能手表适配 Wear Compose 表冠（rotary）触觉反馈，并修复部分系统触觉常量引发的崩溃与震感异常：
 
-运行时通过 boot classpath 中的标记类识别平台，不依赖品牌字符串。系统存在 `com.google.wear.input.WearHapticFeedbackConstants` 时退出适配，保留系统原生行为。
+- 修复缺少系统类 `com.google.wear.input.WearHapticFeedbackConstants` 导致的 `ClassNotFoundException` / `NoClassDefFoundError` 崩溃。
+- 适配 Wear Compose 表冠常量（`scrollFocus` / `scrollTick` / `scrollLimit`）及输入事件（如 OPPO `oplus_crown` 鼠标滚轮转 rotary）。
+- 修复小米系统将 `CLOCK_TICK(4)` / `SEGMENT_FREQUENT_TICK(27)` 映射到 `TEXTURE_TICK(21)` 导致持续振动的问题（重映射为 `SEGMENT_TICK(26)`），并为旧版 OPPO（波形 `302`）与华为（`VibratorEx`）提供表冠触觉直通路径。
 
-## 仓库布局
+项目包含两套并行的交付形态，二者在平台识别、常量取值与触觉语义上必须保持一致：
+1. **Gradle 插件**（`:plugin` + `runtime/`）：构建期通过 AGP ASM Instrumentation 改写应用及依赖字节码，并注入内嵌 runtime / stub JAR。
+2. **Xposed 模块**（独立工程 `xposed/`）：基于 `libxposed` API 102，在目标应用进程 `onPackageReady` 安装运行期 Hook 与 DEX bridge。不 Hook `system_server` 或系统框架进程，因而兼容 LSPatch 等内嵌式免 root 框架。
 
-| 位置 | 职责 |
+## 仓库结构
+
+根构建与 Xposed 构建相互独立，共享根目录版本号配置文件。
+
+| 路径 | 职责 |
 | --- | --- |
-| `settings.gradle.kts` | 主构建，只包含 `:plugin` |
-| `plugin/build.gradle.kts` | Java Gradle 插件配置，编译并内嵌 runtime JAR |
-| `plugin/src/main/java/.../gradle/CnWearOverlayPlugin.java` | 注册扩展、应用变体插桩、解压并注入 runtime 依赖 |
-| `plugin/src/main/java/.../gradle/CnWearOverlayExtension.java` | 四个用户配置开关 |
-| `plugin/src/main/java/.../gradle/asm/` | AGP instrumentation 工厂与 ASM visitor |
-| `runtime/src/main/java/.../runtime/CnWearOverlay.java` | 稳定公共入口、平台组件选择与缓存，供插桩、桩类及 Xposed 调用 |
-| `runtime/src/main/java/.../runtime/BaseOverlay.java` | 基础组件：原生透传、系统类探测、Compose 常量反射和共用表冠事件转换 |
-| `runtime/src/main/java/.../runtime/XiaomiHaptics.java` | 小米组件：识别标记、19/18/20 常量与 View 常量重映射 |
-| `runtime/src/main/java/.../runtime/OppoModernHaptics.java` | OPPO 现代组件：双标记识别、12/12/12 常量与系统原生触觉 |
-| `runtime/src/main/java/.../runtime/OppoLegacyHaptics.java` | OPPO 传统组件：单标记识别、12/12/12 常量、302 反射调用与触觉开关检查 |
-| `runtime/src/main/java/com/google/wear/input/` | Google Wear 常量桩类 |
-| `runtime/src/stubs/android/` | 仅供编译 runtime 的最小 Android 触觉、输入、Context 与 Settings 桩 |
-| `runtime/src/main/resources/META-INF/proguard/` | 随 runtime JAR 分发的 consumer 规则 |
-| `xposed/settings.gradle.kts` | 独立构建，只包含 `:app` |
-| `xposed/app/src/main/java/.../cnwearoverlay/` | Xposed 入口、Hook、平台适配与 SDK bridge |
-| `xposed/app/src/main/resources/META-INF/xposed/` | 入口类列表与模块 API 描述 |
+| `settings.gradle.kts` | 主构建入口，仅包含 `:plugin`（不包含 `xposed/`） |
+| `version.properties` | `version` 与 `versionCode` 唯一数据源，`:plugin` 与 `xposed/:app` 共同读取 |
+| `plugin/build.gradle.kts` | Gradle 插件构建与 Maven Central 发布配置；编译 `runtime/` 并内嵌两个 JAR |
+| `plugin/.../gradle/CnWearOverlayPlugin.java` | 注册 `cnWearOverlay` 扩展；仅作用于 `com.android.application`；解压注入 JAR 并注册 `InstrumentationScope.ALL` |
+| `plugin/.../gradle/CnWearOverlayExtension.java` | 插件扩展配置：`enabled`、`patchHapticsKt`、`remapXiaomiConstants`、`generateStub` |
+| `plugin/.../gradle/asm/CnWearInstrumentationParams.java` | 传递给 AGP worker 的 `@Input` 参数（将 `patchHapticsKt && generateStub` 绑定为 `injectHasWearSdk`） |
+| `plugin/.../gradle/asm/CnWearOverlayClassVisitorFactory.java` | 字节码插桩过滤与 `View` 子类判定 |
+| `plugin/.../gradle/asm/CnWearOverlayClassVisitor.java` | ASM 字节码改写：`HapticsKt` 包装、`AndroidComposeView` 输入包装、`performHapticFeedback` 调用点重写 |
+| `runtime/src/main/java/.../runtime/CnWearOverlay.java` | 跨插件/桩类/Xposed 的稳定公共入口，持有单例缓存的平台组件 |
+| `runtime/src/main/java/.../runtime/BaseOverlay.java` | 基准实现：原样透传、`boot` classloader 探测、`HapticConstants` 反射构造、直连马达开关检查、OPPO 输入转换 |
+| `runtime/src/main/java/.../runtime/XiaomiHaptics.java` | 小米适配：`(19, 18, 20)` 及 `4 / 27 -> 26` 重映射 |
+| `runtime/src/main/java/.../runtime/OppoModernHaptics.java` | 现代 OPPO 适配：`(12, 12, 12)`、原生触觉透传、限定 `oplus_crown` 设备名 |
+| `runtime/src/main/java/.../runtime/OppoLegacyHaptics.java` | 传统 OPPO 适配：`(12, 12, 12)`、拦截 `12` 并反射 `LinearmotorVibrator` 播放波形 `302` |
+| `runtime/src/main/java/.../runtime/HuaweiHaptics.java` | 华为适配：`(19, 18, 20)`、拦截 `19/18/20` 并反射 `VibratorEx` 播放 `watchhaptic.crown.*` |
+| `runtime/src/main/java/.../runtime/OverlayLog.java` | 运行时诊断日志封装（tag `CnWearOverlay`，动态读取 `Log.isLoggable`） |
+| `runtime/src/main/java/com/google/wear/input/WearHapticFeedbackConstants.java` | 缺失 Google Wear 常量桩类，方法委托至 `CnWearOverlay` |
+| `runtime/src/stubs/android/` | 仅用于编译 `:plugin` 内嵌 runtime 的极简 Android compile-only 桩（不打包分发） |
+| `runtime/src/main/resources/META-INF/proguard/cnwearoverlay-runtime.pro` | 随 `cnwearoverlay-runtime.jar` 分发的 consumer R8/ProGuard 规则 |
+| `xposed/settings.gradle.kts`、`xposed/build.gradle.kts`、`xposed/app/build.gradle.kts` | 独立 Xposed Android 构建；直接以 Android `bootClasspath` 编译 `runtime/src/main/java` 并用 D8 生成 bridge DEX |
+| `xposed/app/src/main/java/.../cnwearoverlay/CnWearOverlayModule.java` | `XposedModule` 入口，仅在首个 `onPackageReady` 安装 Hook |
+| `xposed/app/src/main/java/.../cnwearoverlay/Platform.java` | Xposed 侧平台检测与常量/重映射逻辑（需与 `runtime/` 语义同步） |
+| `xposed/app/src/main/java/.../cnwearoverlay/Hooks.java` | Hook 安装协调器（View、Compose 输入、SDK bridge、`HapticsKt`） |
+| `xposed/app/src/main/java/.../cnwearoverlay/CrownMouseHook.java` | OPPO 专属 `AndroidComposeView.dispatchGenericMotionEvent` Hook |
+| `xposed/app/src/main/java/.../cnwearoverlay/WearSdkBridge.java` | 缺失 Google Wear SDK 时向应用 `dexElements` 末尾追加 `assets/cnwearoverlay/classes.dex` |
+| `xposed/app/src/main/resources/META-INF/xposed/` | `java_init.list` 与 `module.prop`（声明 `minApiVersion=101`、`targetApiVersion=102`） |
+| `xposed/app/proguard-rules.pro` | 仅保留 `CnWearOverlayModule` 类及其无参构造 |
+| `.github/workflows/build.yml`、`release.yml` | CI 自动构建与带签名发版（GitHub Release + Maven Central） |
 
-表格中的 `...` 省略共同的 Java 包路径；查找时直接按文件名定位即可。Java 实现分别位于 `cc.star0.wear.lib.cnwearoverlay` 与 `cc.star0.wear.xposed.cnwearoverlay` 包下。
+> 上述缩写包路径分别对应 `cc/star0/wear/lib/cnwearoverlay` 与 `cc/star0/wear/xposed/cnwearoverlay`。
 
-## 工具链与常用命令
+## 工具链与构建命令
 
-构建版本以 Gradle 文件为准。当前使用 Gradle 9.7.1；Xposed AGP 9.3.3、compileSdk / targetSdk 37、minSdk 26；插件编译依赖 AGP API 8.13.0、ASM 9.8、Kotlin stdlib 2.2.0。Java 源码目标版本为 17，不代表 Gradle 启动 JVM 必须为 17；已有 JDK 25 构建记录。
+### 版本基线（以各 Gradle 配置为准）
 
-使用方通过 `includeBuild` 接入插件，步骤见 README。维护本仓库时，可复用 `xposed/` 中的 Gradle 启动脚本，并通过 `-p` 指定构建目录。以下命令均在本仓库根目录执行，按任务选用。
+- **Gradle Wrapper**：`9.7.1`（`xposed/gradle/wrapper/gradle-wrapper.properties`；daemon JVM 配置为 Java `25`，CI 使用 Temurin JDK `25`）
+- **Java 目标版本**：`17`（`:plugin`、内嵌 runtime、`xposed/:app` 与 bridge DEX 编译均以 Java 17 为准）
+- **插件工程 (`:plugin`)**：
+  - `com.android.tools.build:gradle-api:9.4.1`（`compileOnly`）
+  - `org.ow2.asm:asm:9.10.1`（`compileOnly`）
+  - `org.jetbrains.kotlin:kotlin-stdlib:2.4.20`（`compileOnly`）
+  - `com.vanniktech.maven.publish:0.37.0`
+- **Xposed 工程 (`xposed/:app`)**：
+  - AGP `9.3.3`、`compileSdk = 37`、`targetSdk = 37`、`minSdk = 26`、`buildToolsVersion = "37.0.0"`
+  - `io.github.libxposed:api:102.0.0`（`compileOnly`，绝不打包进 APK）
+  - `abiFilters` 限定 `arm64-v8a` 与 `armeabi-v7a`
 
-### Windows（PowerShell）
+### 常用命令（均从仓库根目录执行）
 
+共用 `xposed/` 下的 Gradle Wrapper 并通过 `-p` 指定工程目录；构建 Xposed 需要配置 `ANDROID_HOME` 或被忽略的 `xposed/local.properties`（禁止将本机绝对路径提交到仓库）。
+
+**Windows (PowerShell):**
 ```powershell
-# 主构建
+# 构建 Gradle 插件（含编译内嵌 runtime/stub JAR）
 .\xposed\gradlew.bat -p . :plugin:build
 
-# 单独验证插件声明
+# 校验 Gradle 插件元数据声明
 .\xposed\gradlew.bat -p . :plugin:validatePlugins
 
-# 仅生成内嵌 runtime JAR
+# 仅生成插件内嵌 runtime 与 stub JAR
 .\xposed\gradlew.bat -p . :plugin:cnWearRuntimeHelperJar :plugin:cnWearRuntimeStubJar
 
-# Xposed，需可用的 Android SDK
-.\xposed\gradlew.bat -p xposed :app:assembleRelease
+# 构建 Xposed Debug / Release APK（未设签名环境变量时 Release 为未签名）
+.\xposed\gradlew.bat -p xposed :app:assembleDebug :app:assembleRelease
 
-# 按需运行 Android lint
+# 运行 Xposed Android Lint
 .\xposed\gradlew.bat -p xposed :app:lintRelease
 
-# 查看变更格式
+# 检查空白符与换行格式
 git diff --check
 ```
 
-### macOS / Linux（终端）
-
+**macOS / Linux:**
 ```bash
-# 主构建
 ./xposed/gradlew -p . :plugin:build
-
-# 单独验证插件声明
 ./xposed/gradlew -p . :plugin:validatePlugins
-
-# 仅生成内嵌 runtime JAR
 ./xposed/gradlew -p . :plugin:cnWearRuntimeHelperJar :plugin:cnWearRuntimeStubJar
-
-# Xposed，需可用的 Android SDK
-./xposed/gradlew -p xposed :app:assembleRelease
-
-# 按需运行 Android lint
+./xposed/gradlew -p xposed :app:assembleDebug :app:assembleRelease
 ./xposed/gradlew -p xposed :app:lintRelease
-
-# 查看变更格式
 git diff --check
 ```
 
-### 环境与产物
+### 发布与签名说明
 
-Gradle 启动脚本在 Git 中标记为可执行，macOS / Linux 可直接使用 `./xposed/gradlew` 调用。两类平台都通过环境变量 `ANDROID_HOME` 或被忽略的 `xposed/local.properties` 配置 SDK 路径，文档与共享构建脚本不写个人机器路径。
+- **Xposed 签名**：通过环境变量 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 启用 Release 签名。
+- **Maven Central 发布**：`cc.star0.wear.lib:cnwearoverlay` 及插件 marker；需设置 `ORG_GRADLE_PROJECT_mavenCentralUsername`、`ORG_GRADLE_PROJECT_mavenCentralPassword`、`ORG_GRADLE_PROJECT_signAllPublications=true`、`ORG_GRADLE_PROJECT_signingInMemoryKey`、`ORG_GRADLE_PROJECT_signingInMemoryKeyPassword`（任务 `:plugin:publishAndReleaseToMavenCentral`）。
+- **版本发布校验**：推送 tag（如 `1.2.2` 或 `v1.2.2`）触发 `release.yml`，会强制校验 tag 与 `version.properties` 的 `version` 一致且非 `-SNAPSHOT`；发版前需同步递增 `version` 与 `versionCode`。
 
-根构建不会构建 Xposed。Xposed 构建会直接编译 `runtime/src/main/java` 源码作为 bridge，并通过 `moduleRuntimeJar` 从同一编译产物中提取整个 runtime 包供模块主 DEX 使用，因此修改 runtime 后通常需要检查两套构建。未配置 `ANDROID_KEYSTORE_PATH` 等签名环境变量时，Release 输出默认是未签名 APK。
+## 平台探测与触觉语义
 
-版本号统一维护在根目录 `version.properties`，两个独立构建都读取它；正式发布时递增
-`versionCode`。`.github/workflows/build.yml` 在分支 push / PR 时编译两套构建，
-`release.yml` 在 tag push 时校验版本、构建签名 APK，再分别发布 GitHub Release 和 Maven Central。
-Central 发布包含 `cc.star0.wear.lib:cnwearoverlay` 及原插件 ID 的 marker；GPG 签名只在
-`signAllPublications=true` 时启用。
+### 核心原则
 
-## Gradle 插件链路
+- **严禁依赖品牌字符串**：只通过 root/boot classloader 调用 `Class.forName(name, false, boot)` 探测系统类，避免命中应用内置桩类或第三方 SDK，也不提前触发类初始化。
+- **原生 Wear OS 优先退出**：只要 boot classpath 存在 `com.google.wear.input.WearHapticFeedbackConstants`，立即认定为原生 Wear OS（如三星、TicWatch、OPPO/OnePlus Wear OS 版），所有适配保持非激活状态。
+- **双端逻辑同步**：`runtime/`（`CnWearOverlay` + 各 `BaseOverlay` 子类）与 `xposed/`（`Platform.java` + `Hooks.java`）分别维护平台判断与 View 拦截分支。**修改任何平台识别类、常量值、事件转换或重映射逻辑时，必须同时检查两端并保持语义一致。**
 
-插件 ID 为 `cc.star0.wear.lib.cnwearoverlay`，扩展名为 `cnWearOverlay`。四个开关默认均为 `true`：
+### 平台适配矩阵（严格按探测顺序）
 
-| 开关 | 行为与关联 |
+| 优先级 | 平台状态 | Boot Classpath 探测标记 | Compose 常量 `(focus, tick, limit)` | `View.performHapticFeedback` 处理 | OPPO 输入转换 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Google Wear OS (Inactive) | 存在 `com.google.wear.input.WearHapticFeedbackConstants` | 回落原逻辑 | 原样透传 | 否 |
+| 2 | `XIAOMI` | 存在 `miwear.os.VibrationEffectId` 或 `com.xiaomi.miwear.input.WearHapticFeedbackConstants` | `(19, 18, 20)` | 将 `4` (`CLOCK_TICK`) / `27` (`SEGMENT_FREQUENT_TICK`) 重映射为 `26` (`SEGMENT_TICK`) | 否 |
+| 3 | `OPPO_MODERN` | 同时存在 `android.os.linearmotorvibrator.LinearmotorVibrator` 与 `android.view.HapticScrollFeedbackProvider` | `(12, 12, 12)` | 原样透传（系统自行将 `12` 路由到波形 `302`） | 是，仅限 `InputDevice.getName()` 为 `"oplus_crown"` |
+| 4 | `OPPO_LEGACY` | 存在 `LinearmotorVibrator`，不存在 `HapticScrollFeedbackProvider` | `(12, 12, 12)` | 拦截 `12`（不重入 View），反射 `linearmotor` 服务播放波形 `302` / 强度 `2` | 是，不限制设备名 |
+| 5 | `HUAWEI` | 存在 `com.huawei.android.os.VibratorEx` | `(19, 18, 20)` | 拦截 `19/18/20`（不重入 View），反射 `VibratorEx.setHwVibrator` 播放 `watchhaptic.crown.*` | 否 |
+| 6 | Unknown (Inactive) | 上述标记均不存在 | 回落原逻辑 | 原样透传 | 否 |
+
+### 平台实现关键细节
+
+- **`OPPO_LEGACY` 直连播放**（`OppoLegacyHaptics.perform`）：
+  - 先通过 `BaseOverlay.canPerformDirectHaptic` 校验 `view != null`、`view.isAttachedToWindow()`、View 开关（尊重 `flags & 1` 忽略）及系统 `Settings.System` 的 `haptic_feedback_enabled`（尊重 `flags & 2` 忽略）。
+  - 反射构建 `WaveformEffect`（`effectType=302`、`strength=2`、`loop=false`、`asynchronous=false`），并在调用 `vibrate` 前校验 `getEffectType()` 确认为 `302`（部分固件不支持高压马达时会降级成 `6`）。
+  - 反射失败、无服务/权限、不支持或降级时直接返回 `false`。
+- **`HUAWEI` 直连播放**（`HuaweiHaptics.perform`）：
+  - 同样先经过 `canPerformDirectHaptic` 检查。
+  - `SCROLL_TICK(18)` 对应 `watchhaptic.crown.strength1`、`SCROLL_ITEM_FOCUS(19)` 对应 `watchhaptic.crown.strength2`、`SCROLL_LIMIT(20)` 对应 `watchhaptic.crown.strength3`，均直接检查支持性并播放，不在档位间回退。结果会按效果名缓存在 `SUPPORTED_EFFECTS` 中。
+  - 反射或支持检查失败直接返回 `false`。
+- **OPPO 鼠标滚轮转 Rotary**（`BaseOverlay.rotaryEvent`）：
+  - 仅在 `isOppo()` 为真时生效，要求：`ACTION_SCROLL`、来源包含 `SOURCE_MOUSE` 且不包含 `SOURCE_ROTARY_ENCODER`、`pointerCount == 1`、`AXIS_VSCROLL` 为有限非零浮点数，且满足对应代际的设备名条件。
+  - 仅复制 `PointerProperties` / `PointerCoords`，将 `AXIS_VSCROLL` 原值写入 `AXIS_SCROLL`，并将 source 设为 `SOURCE_ROTARY_ENCODER`；**不缩放、不取反**。
+  - 若分发返回 `false`（未被 rotary 消费者处理），需用原始事件重试一次；正常返回与异常路径的 `finally` 中必须调用 `recycleRotaryEvent` 回收副本，且不得回收或篡改调用方原始事件。
+
+## Gradle 插件与 ASM 插桩约束
+
+### 插件开关与打包流水
+
+- `CnWearOverlayPlugin` 仅注册在 `com.android.application`（应用在 library 模块为 no-op 并输出 warn）。
+- `ExtractRuntimeJars` 通过 `TaskProvider` 在构建期把插件资源 `/cnwearoverlay-runtime.jar` 和（当 `generateStub` 为 `true` 时）`/cnwearoverlay-stub.jar` 解压到使用方的 `build/cnwearoverlay/`，并以 `builtBy` 关联 `implementation` 依赖，确保 `:app:clean` 与配置缓存下依赖顺序正确。
+- 四个开关默认均为 `true`：
+  - `enabled`：总开关；`false` 时不添加 JAR 依赖也不注册插桩。
+  - `patchHapticsKt`：包装 `HapticsKt.getCustomRotaryConstants` 与 `AndroidComposeView.dispatchGenericMotionEvent`；即使 `remapXiaomiConstants=false`，也会将 `androidx.wear.compose.foundation.rotary.*` 包内的触觉调用代理至 `CnWearOverlay.performRotaryHapticFeedback`（从而保留 `OPPO_LEGACY` 和 `HUAWEI` 适配）。
+  - `remapXiaomiConstants`：全局（`InstrumentationScope.ALL`）将 `View` 及其子类的 `performHapticFeedback` 虚调用重写为 `CnWearOverlay.performHapticFeedback`（包含小米重映射及旧 OPPO / 华为直连逻辑）。
+  - `generateStub`：控制注入 `cnwearoverlay-stub.jar`；仅当 `patchHapticsKt && generateStub` 同时为 `true` 时，才包装 `HapticsKt.hasWearSDK(Context)`（`forceWearSdk() | orig(context)`）。
+
+### ASM 字节码改写红线
+
+- **防自我递归**：`CnWearOverlayClassVisitorFactory.isInstrumentable` 必须排除 `cc.star0.wear.lib.cnwearoverlay.runtime.*` 与 `com.google.wear.input.WearHapticFeedbackConstants`，否则运行时内部的原生透传调用会被再次改写成代理调用导致无限递归。
+- **保留 `super` 调用**：`PerformHapticFeedbackRewriter` 仅匹配 `Opcodes.INVOKEVIRTUAL`，**绝不能**改写 `Opcodes.INVOKESPECIAL`（否则 `super.performHapticFeedback(...)` 经静态代理重新虚分派会重入子类造成无限递归）。
+- **包装命名与帧表**：被包装方法重命名为 `<name>$cnwear$orig`，新生成的同名包装方法须严格保持参数栈形状、`StackMapTable`（`F_NEW`）和 `visitMaxs`。例如 `getCustomRotaryConstants` 通过 `LDC HapticConstants` 传入 `Class<?>`（确保 R8 混淆重命名后仍有效）。
+- **Wear Compose 目标基线**：当前 `HapticsKt`、`HapticConstants$Wear4RotaryHapticConstants`（字段 `scrollFocus` / `scrollTick` / `scrollLimit` 及无参构造）和 `AndroidComposeView.dispatchGenericMotionEvent` 签名均按 **Wear Compose 1.6.2** 核实。升级或扩展 Compose 版本前，必须对照实际字节码检查签名与类层次，不能盲目放宽匹配条件。
+
+### Compile-only Stubs 与 Consumer R8 规则
+
+- **Stub 同步要求**：`plugin/build.gradle.kts` 使用 `classpath = files()` 配合 `runtime/src/stubs/` 编译 runtime，而 `xposed/app/build.gradle.kts` 使用 Android `bootClasspath` 编译同一份 `runtime/src/main/java` 源码。在 `runtime/` 中使用任何新的 `android.*` 类或方法时，**必须同步在 `runtime/src/stubs/android/` 补齐精确签名**，且注意 `sourcesJar` 与运行时 JAR 均不能把 stubs 打入分发产物。
+- **R8 规则**（`cnwearoverlay-runtime.pro`）：通过 `-keep,allowshrinking,allowoptimization` 保留 `HapticConstants` 类名（支持 `cls.getName() + "$Wear4RotaryHapticConstants"` 拼接），`-keepclassmembers` 保护 `scrollFocus` / `scrollTick` / `scrollLimit` 防止常量传播，`-if` 条件保留 `Wear4RotaryHapticConstants.<init>()`。修改任何反射字段或类名拼接逻辑时必须同步更新此文件。
+
+## Xposed 模块架构约束
+
+- **入口与进程隔离**：`CnWearOverlayModule` 通过 `META-INF/xposed/java_init.list` 加载，必须保留公开无参构造（见 `xposed/app/proguard-rules.pro`）。只在 `onPackageReady` 且 `param.isFirstPackage()` 为真时执行 `Hooks.install`。
+- **各自容错**：`Hooks.install` 按顺序执行：平台探测 → （`XIAOMI` / `OPPO_LEGACY` / `HUAWEI`）Hook `View.performHapticFeedback(int)` 与 `(int, int)` 并 `deoptimize` → （`OPPO`）安装 `CrownMouseHook` → 安装 `WearSdkBridge` → 按名查找并 Hook `HapticsKt.getCustomRotaryConstants`。后几步独立捕获异常，输入 Hook 或 Bridge 不依赖 `HapticsKt` 未被混淆。
+- **避免双重触发与重入**：
+  - `Hooks.hookViewPerformHapticFeedback` 中，`OPPO_LEGACY` 命中常量 `12` 直接调用模块主 DEX 的 `CnWearOverlay.performOppoLegacyScrollFeedback`，`HUAWEI` 命中 `19/18/20` 直接调用 `CnWearOverlay.performHuaweiRotaryFeedback`，无论返回 `true`/`false` 均不调用 `chain.proceed`，防止重入重载或退回系统默认震动。
+  - `CrownMouseHook` 使用 `ExceptionMode.PASSTHROUGH` 保持原始异常传递，并在安装前探测 `dispatchGenericMotionEvent$cnwear$orig`：若目标应用已被 Gradle 插件插桩，则直接跳过以避免双重事件转换。
+- **Bridge DEX 注入**：`compileWearSdkBridge` → `wearSdkBridgeJar` → `dexWearSdkBridge`（D8 `--min-api 29`，不经主 APK R8）将完整 runtime 与 `com.google.wear.input.WearHapticFeedbackConstants` 打入 `assets/cnwearoverlay/classes.dex`。`WearSdkBridge` 仅在目标 `BaseDexClassLoader` 缺失该类时将 DEX 追加至 `pathList.dexElements` 末尾（保留应用/系统已有类优先），校验失败则原子回滚。
+
+## 开发规范、调试与验证清单
+
+### 代码与注释规范
+
+- 遵循 **Java 17**、**4 空格缩进**、**UTF-8** 编码与 **Gradle Kotlin DSL** 习惯。
+- 注释重点记录**设备固件差异、反射契约、字节码栈/递归边界**，避免为直白代码写模板式注释；保留无关现有文档注释的完整性。
+
+### 诊断日志 (`OverlayLog`)
+
+- 默认关闭，基于 `Log.isLoggable("CnWearOverlay", Log.DEBUG)` 动态判定。
+- 抓日志必须在目标应用**冷启动前**开启（因为平台探测结果 `CnWearOverlay.activeComponent` 与反射 `Api.INSTANCE` 均只初始化一次）：
+  ```shell
+  adb shell setprop log.tag.CnWearOverlay DEBUG
+  adb shell am force-stop <your.application.id>
+  adb logcat -b main -b system -b crash -v threadtime -T 1 "*:V"
+  ```
+- 排查结束后执行 `adb shell setprop log.tag.CnWearOverlay ""`（或 `INFO`）关闭。
+
+### 验证建议（仓库现状与按需检查）
+
+**注意**：本仓库目前**没有任何自动化单元测试或 UI/Instrumentation 测试**。Gradle 与 APK 构建成功不代表真机触觉反馈、马达权限或 R8 后 Compose 反射逻辑正确。
+
+| 修改范围 | 建议验证动作 |
 | --- | --- |
-| `enabled` | 关闭整个变体的插桩和 runtime 注入 |
-| `patchHapticsKt` | 包装 `getCustomRotaryConstants(View)` 和 `AndroidComposeView.dispatchGenericMotionEvent`，代理 rotary 包内的旧 OPPO 触觉调用；同时启用桩类时包装 `hasWearSDK(Context)` |
-| `remapXiaomiConstants` | 将 View 及其子类的触觉虚调用改为 runtime 静态代理，处理小米重映射和旧 OPPO 的 `12` → `302` |
-| `generateStub` | 控制 `cnwearoverlay-stub.jar` 注入及 `hasWearSDK` 强制路径 |
+| `plugin/` 打包或扩展 | 执行 `:plugin:build`、`:plugin:validatePlugins`，核查 `cnwearoverlay-runtime.jar` / `cnwearoverlay-stub.jar` 内容与依赖顺序 |
+| `asm/` 字节码插桩 | `:plugin:build` 后，结合真实接入 Wear Compose 的使用方应用做 Release (R8) 构建；重点核验 `View` 子类、`super` 调用、四个扩展开关组合及 `StackMapTable` 校验 |
+| `runtime/` 或平台逻辑 | **同时构建** `:plugin:build` 与 `xposed` 的 `:app:assembleRelease`（确保 stub 与真实 Android SDK 编译均通过），按需核对 `Platform.java` 同步 |
+| `cnwearoverlay-runtime.pro` | 使用真实 Wear Compose 应用打 Release R8 包，核验 `mapping.txt` 中 `HapticConstants` / `Wear4RotaryHapticConstants` 与三个字段可读性 |
+| `xposed/` Hook 或 Bridge | `:app:assembleRelease` + `:app:lintRelease`；检查 APK 中 `assets/cnwearoverlay/classes.dex`、`META-INF/xposed/` 存在，并在目标设备上实测 |
+| `README.md` / `AGENTS.md` | 核对文件路径、版本号、命令及 Markdown 链接均与当前仓库一致 |
 
-只对 Android application 模块注册处理。`InstrumentationScope.ALL` 让依赖中的 Compose 字节码也参与改写。
-
-runtime 由两个 JAR 组成：`cnwearoverlay-runtime.jar` 包含辅助类和 consumer 规则，`cnwearoverlay-stub.jar` 包含 `com.google.wear.input` 桩类。它们打包进插件资源，再由 `cnWearOverlayExtractRuntimeJars` 任务解压到使用方的 `build/cnwearoverlay/`。依赖通过 `builtBy` 关联任务，这样 clean、增量构建和产物重建都有明确顺序。
-
-修改插桩时重点检查以下语义：
-
-- runtime 自身和 Google 桩类不参与触觉调用重写，避免代理递归调用自己。
-- `View` 子类的 `INVOKEVIRTUAL` 也可命中；`super` 的 `INVOKESPECIAL` 保留原样，避免重新虚分派导致递归。
-- 关闭 `remapXiaomiConstants` 时，`patchHapticsKt` 仍将 rotary 包的触觉调用改为
-  `performRotaryHapticFeedback`，只代理旧 OPPO，不重映射小米常量；两项都关闭才不改写调用点。
-- 原始 Compose 方法加上 `$cnwear$orig` 后缀，新包装方法继续使用原名。新增分支需有正确的 frame、栈与方法描述符。
-- `getCustomRotaryConstants` 向 runtime 传入 `HapticConstants.class`，返回 `null` 时执行原始逻辑。
-- `patchHapticsKt` 开启时，在 `AndroidComposeView.dispatchGenericMotionEvent` 入口包装输入分发，
-  调用 `CnWearOverlay.rotaryEvent`，处理系统识别为 OPPO 的 `SOURCE_MOUSE` 单指 `ACTION_SCROLL`，
-  且 `AXIS_VSCROLL` 为有限非零值。OPPO_MODERN 还要求能够取得 `InputDevice` 且设备名精确为
-  `oplus_crown`；OPPO_LEGACY 不限制设备名，也不要求能够取得 `InputDevice`。
-- 命中事件创建独立副本，将 source 设为 `SOURCE_ROTARY_ENCODER`，把 `AXIS_VSCROLL` 原值复制到
-  `AXIS_SCROLL`，不额外反向或缩放，让既有 Compose 表冠逻辑决定滚动与反馈。
-  已消费不重投，未消费回落原事件；非 OPPO、触摸和原生 rotary 输入保持原样。
-  OPPO_LEGACY 上的普通鼠标滚轮也按相同条件转换；OPPO_MODERN 上其他名称的鼠标保持原样。
-  副本在正常和异常路径均回收，不能修改或回收调用方的原始事件。
-- 当前签名和结构以 Wear Compose 1.6.2 为依据。扩展版本支持时结合实际依赖字节码核对，不只扩大名称匹配范围。
-
-## 平台语义与反射
-
-| 平台 | 识别标记 | focus / tick / limit | View 常量处理 |
-| --- | --- | --- | --- |
-| 系统 Google Wear SDK | `com.google.wear.input.WearHapticFeedbackConstants` | 系统原生 | 原样透传 |
-| 小米 | `miwear.os.VibrationEffectId` 或 `com.xiaomi.miwear.input.WearHapticFeedbackConstants` | `19 / 18 / 20` | `4`、`27` → `26` |
-| OPPO_MODERN | 同时有 `android.os.linearmotorvibrator.LinearmotorVibrator` 和 `android.view.HapticScrollFeedbackProvider` | `12 / 12 / 12` | 原样透传，系统将 `12` 路由到 `302` |
-| OPPO_LEGACY | 有 `android.os.linearmotorvibrator.LinearmotorVibrator`，无 `android.view.HapticScrollFeedbackProvider` | `12 / 12 / 12` | 代理 `12`，直接播放 `302` / strength `2` |
-| 未识别平台 | 无上述标记 | 回落原逻辑 | 原样透传 |
-
-runtime 由 `CnWearOverlay` 选择并缓存一个 `BaseOverlay` 组件；小米、OPPO 现代与传统组件
-分别继承基础组件，提供自己的识别规则和触觉差异。未识别平台或系统 Google Wear SDK 使用
-不启用适配的基础组件。公共入口的方法签名保持稳定，ASM 与 Xposed 无需依赖内部组件类型。
-基础组件负责共用反射和事件处理；小米只覆写常量重映射，OPPO 传统组件覆写触觉分发，
-OPPO 现代组件沿用原生透传。关闭小米重映射时使用独立的 rotary 入口，仍保留旧 OPPO 适配。
-
-Xposed 的 `Platform.java` 仍独立实现平台判断与常量映射。修改 runtime 平台组件时检查其
-是否也需同步；runtime 使用组件类型区分平台，Xposed 使用内部 state，保持外部行为一致即可。
-
-OPPO 两代只按上述 boot classpath 类组合判断，不以机型名、API 版本或 `WaveformEffect` 的其他字段补判。
-两代都参与输入转换、Wear SDK 强制路径与桩类取值；系统 Google Wear SDK 仍优先退出。
-`OppoLegacyHaptics` 共用于插件和 Xposed：通过 `linearmotor` 服务检查马达，反射构造
-`WaveformEffect(302, strength=2, loop=false, asynchronous=false)`。尊重 View 附着状态、
-View 与系统 `haptic_feedback_enabled`，保留 flags `1` / `2` 的忽略开关语义。
-不叠加距离或时间节流，触发时机仍由 Compose 决定；不额外检查睡眠/勿扰，沿用原生直接 302 路径。
-反射或服务失败、无马达、效果被厂商 Builder 降为 `6` 时返回 `false`，不回退到
-`VIRTUAL_KEY(1)`、原始 `12` 或普通 Vibrator。成功返回仅表示反射调用完成，不能证明物理震动。
-
-2026-11-09 核验 OWW231 `2210` 与 OWW261 `3180` OTA 后确认两代标记差异。
-注意外部《OPPO手表表冠滚动震动分析》中的两项控制流描述有误：OWW231 的 `12` 实际与
-`0/1/10001` 共用通用波形 `300` 分支；OWW261 的 `12` 播放 `302` 后返回 `true`。
-旧版改走直接 `302` 是为了匹配原生 ScrollView 的表冠波形；不根据 View 返回值重试震动。
-
-OPPO 的 `oplus_crown` / `pixart_pat9125` 上报 `SOURCE_MOUSE(0x2002)`，会进入 Compose 普通滚轮路径，绕过 Wear Compose
-表冠触觉。因此两种接入方式都在 Compose 输入入口转换事件，并共用 `CnWearOverlay` 的实现。
-此适配沿用既有触觉常量和系统触觉开关行为。
-
-2026-11-09 实机日志的固件指纹为 `OPPO/OWW221/OWW221:11/...11_A.291...`：平台正确识别为
-OPPO_LEGACY，内置表冠在 `dumpsys input` 和应用事件中均名为 `pixart_pat9125`。
-原先只匹配 `oplus_crown` 导致 271 条滚轮事件全部不转换，未触发 Compose 触觉调用。
-OPPO_LEGACY 保持不限制设备名，以平台与事件特征作为转换条件；OPPO_MODERN 仅接受
-`oplus_crown`，由 `OppoModernHaptics.acceptsRotaryDevice` 提供名称检查，共用输入转换逻辑。
-设备名仅约束事件转换，不改变通过系统类进行的平台判断。
-
-Compose 的 `HapticConstants` 基类为 abstract。当前实现通过“基类名 + `$Wear4RotaryHapticConstants`”查找具体子类，调用私有无参构造，再写入三个 `Integer` 字段：`scrollFocus`、`scrollTick`、`scrollLimit`。创建独立实例，避免改动 Kotlin 全局单例。
-
-这些反射关系决定 R8 约束：基类名及子类名有拼接关系；三个字段需要保留名字、存储和反射写入后的读取语义；子类无参构造需要在反射入口可达时保留。getter、单例与普通辅助方法可按实际引用优化。调整 keep rule 时，以这些具体访问点为依据，优先使用精确类名和成员签名。
-
-## Xposed 链路
-
-入口为 `CnWearOverlayModule`，由 `META-INF/xposed/java_init.list` 按名称加载，使用公开无参构造。初始化位于 `onPackageReady`，只在首个 package 回调中安装 Hook。`module.prop` 当前声明 `minApiVersion=101`、`targetApiVersion=102`；实际编译依赖为 `libxposed api:102.0.0`，作用域是 `compileOnly`。
-
-`Hooks.install` 依次检测平台、在小米或 OPPO_LEGACY 安装 View Hook、在两代 OPPO 安装 Compose 输入 Hook、尝试安装缺失 SDK bridge、查找并 Hook Compose 常量方法。各安装步骤独立捕获失败；输入 Hook 不依赖 bridge 或常量 Hook 成功。目标应用的 Compose 名称若被混淆，按名查找可能失效，不能仅凭模块 APK 构建成功推断目标应用的触觉行为正常。
-
-旧 OPPO 的两个 View 重载在常量为 `12` 时直接调用模块主 DEX 的
-`CnWearOverlay.performOppoLegacyScrollFeedback`，无论成功或失败均不 `Chain.proceed`，
-避免重入另一个重载或回到系统通用波形；其他常量正常放行。
-
-`CrownMouseHook` 按名称查找 `AndroidComposeView.dispatchGenericMotionEvent(MotionEvent): boolean`，
-仅由 OPPO 平台安装，随模块的目标应用作用域启用，无需目标应用接入 Gradle 插件。
-它直接调用模块主 DEX 中的 `CnWearOverlay.rotaryEvent` 和 `recycleRotaryEvent`，不反射调用目标应用里的 runtime。
-通过 `Chain.proceed` 分发副本，未消费才显式传入原事件再分发；`finally` 只回收副本。
-使用 `ExceptionMode.PASSTHROUGH` 保持分发异常语义，不在异常后重试。
-若存在 Gradle 插桩的 `dispatchGenericMotionEvent$cnwear$orig(MotionEvent)`，跳过输入 Hook，避免双重包装。
-
-`WearSdkBridge` 从模块 APK 的 `assets/cnwearoverlay/classes.dex` 读取兼容类。仅当目标 classloader 缺少 Google 常量类时，将新 DEX elements 追加到原数组末尾；现有类保持优先，校验加载失败时恢复原数组。构建链路是 `compileWearSdkBridge` → `wearSdkBridgeJar` → `dexWearSdkBridge` → assets；该 DEX 使用 D8、`min-api 29`，不经过主 APK 的 R8。
-
-Xposed 的 ProGuard 文件仅保留模块入口和公开无参构造。外部 API 的覆写回调由 R8 依据编译 classpath 处理。反射指向目标应用或系统的类，不需要在模块中添加对应整包 keep。排查缺失类告警时先检查依赖与实际打包内容，再决定是否需要精确的 `dontwarn`。
-
-## 修改与验证建议
-
-跟随现有 Java 17、四空格缩进、Gradle Kotlin DSL 风格即可。注释侧重设备差异、反射原因和容易回归的行为；没有必要为简单逻辑增加模板式说明。通常不需要引入新的框架或重排不相关文件。
-
-按改动选择验证范围：
-
-| 改动 | 建议验证 |
-| --- | --- |
-| README / AGENTS | 路径、命令、版本与当前代码一致，Markdown 链接可解析 |
-| SVG | XML 可解析、480×480 尺寸与 viewBox 正确、实际渲染和小尺寸辨识度 |
-| 插件配置或打包 | `:plugin:build`；检查内嵌 JAR 内容及任务依赖 |
-| ASM visitor | 插件构建，加使用方应用的编译 / Release 构建；关注 View 子类、super 调用和开关组合 |
-| runtime / 平台映射 | 两套构建；按需验证小米、OPPO、原生 Wear OS、未识别平台的行为 |
-| R8 规则 | 优化产物中的类名、构造器和字段；反射赋值后 getter 的结果；未使用路径是否可裁剪 |
-| Xposed Hook / bridge | Release 构建；按需检查 APK 中入口描述与 bridge DEX，再用目标设备验证 |
-
-目前仓库不包含自动化测试代码。构建成功不等于真机触觉验证。使用真实 Compose 类进行 R8 冒烟检查时，比模拟类更容易发现 Kotlin 构造器和字段优化问题。
-
-验证 OPPO 输入适配时，应在真机核对表冠设备名、source 和轴值，确认目标控件的 rotary 焦点有效、
-滚动方向正常，且只产生一次滚动与反馈。未消费时应回落原滚轮路径，系统触觉开关关闭时仍可能没有震动。
-
-临时验证脚本、映射文件、截图等可放在对应的 `build/` 下。已有通过的验证不必无故重复，最终说明实际执行过的检查及剩余限制即可。
-
-runtime 通过 `OverlayLog` 提供默认关闭的 `CnWearOverlay` tag 诊断日志，使用
-`adb shell setprop log.tag.CnWearOverlay DEBUG` 开启，设为 `INFO` 关闭。
-开关动态读取；平台组件及旧 OPPO 反射入口仍只初始化一次，因此抓取时先开启日志再冷启动应用。
-Gradle 输入包装调用 `logRotaryDispatch` 记录转换副本的首次消费结果，日志不修改返回值、
-事件回退、回收和触觉策略。运行时编译所需 `android.util.Log` 桩不随 JAR 分发。
-使用方抓取步骤和日志含义见 README。
-
-## 交付说明
-
-面向使用者的概览、接入方式放在 README；面向维护者的架构背景和排错线索放在这里。完成任务时简要说明修改内容、验证结果与未验证的设备范围。可以根据明确任务直接修改与验证，无需增加额外审批环节。
+完成任务交付时，请简明列出修改内容、实际执行的构建/检查命令与结果，以及尚未在真机覆盖验证的设备与场景范围。

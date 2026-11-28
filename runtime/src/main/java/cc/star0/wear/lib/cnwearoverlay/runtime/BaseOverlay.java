@@ -1,5 +1,7 @@
 package cc.star0.wear.lib.cnwearoverlay.runtime;
 
+import android.content.Context;
+import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
@@ -8,6 +10,9 @@ import java.lang.reflect.Field;
 
 /** 基础组件：原生透传、系统类探测、Compose 常量构造和两代 OPPO 共用的输入转换。 */
 class BaseOverlay {
+    private static final int IGNORE_VIEW_SETTING = 1;
+    private static final int IGNORE_GLOBAL_SETTING = 2;
+
     private final boolean active;
     final int scrollItemFocus;
     final int scrollTick;
@@ -39,6 +44,36 @@ class BaseOverlay {
 
     boolean acceptsRotaryDevice(MotionEvent event) {
         // 旧 OPPO 的设备名不统一；需要名称限制的平台组件单独覆写。
+        return true;
+    }
+
+    static boolean canPerformDirectHaptic(View view, int flags, String logPrefix) {
+        if (view == null) {
+            return false;
+        }
+        // 直接调用马达服务绕过了 View / WindowManager，需在这里保留它们的触觉开关语义。
+        if (!view.isAttachedToWindow()) {
+            OverlayLog.debug(logPrefix + " skipped: view detached");
+            return false;
+        }
+        if (!view.isHapticFeedbackEnabled() && (flags & IGNORE_VIEW_SETTING) == 0) {
+            OverlayLog.debug(logPrefix + " skipped: view haptics disabled");
+            return false;
+        }
+        if ((flags & IGNORE_GLOBAL_SETTING) == 0) {
+            try {
+                Context context = view.getContext();
+                if (Settings.System.getInt(context.getContentResolver(),
+                        "haptic_feedback_enabled", 0) == 0) {
+                    OverlayLog.debug(logPrefix
+                            + " skipped: system haptics disabled or setting absent");
+                    return false;
+                }
+            } catch (RuntimeException | LinkageError e) {
+                OverlayLog.failure(logPrefix + " failed stage=settings", e);
+                return false;
+            }
+        }
         return true;
     }
 

@@ -10,6 +10,8 @@ package cc.star0.wear.xposed.cnwearoverlay;
  *       为修复这些常量的震感异常，重映射为 SEGMENT_TICK(26)（EFFECT_TICK -> 210）。
  *   - OPPO 手表：同时有 LinearmotorVibrator 和 HapticScrollFeedbackProvider 为 MODERN，
  *       只有前者为 LEGACY；均向 Compose 提供 12，LEGACY 由 View Hook 直接播放波形 302。
+ *   - 华为手表（HUAWEI）：存在 com.huawei.android.os.VibratorEx；向 Compose 提供 (19,18,20)，
+ *       View Hook 拦截并调用 VibratorEx.setHwVibrator("watchhaptic.crown.*")。
  *   - 真 Wear OS：boot classpath 存在 com.google.wear.input.WearHapticFeedbackConstants，
  *       一律不介入（含 OPPO/OnePlus 的 Wear OS 版手表）。
  */
@@ -26,6 +28,9 @@ final class Platform {
     private static final int OPPO_FOCUS = 12;
     private static final int OPPO_TICK = 12;
     private static final int OPPO_LIMIT = 12;
+    private static final int HUAWEI_FOCUS = 19;
+    private static final int HUAWEI_TICK = 18;
+    private static final int HUAWEI_LIMIT = 20;
 
     private static final String GOOGLE_WEAR_CONSTANTS =
             "com.google.wear.input.WearHapticFeedbackConstants";
@@ -37,11 +42,13 @@ final class Platform {
     private static final String OPPO_VIBRATOR =
             "android.os.linearmotorvibrator.LinearmotorVibrator";
     private static final String OPPO_SCROLL_FEEDBACK = "android.view.HapticScrollFeedbackProvider";
+    private static final String HUAWEI_VIBRATOR_EX = "com.huawei.android.os.VibratorEx";
 
     static final int STATE_INACTIVE = 0;
     static final int STATE_XIAOMI = 1;
     static final int STATE_OPPO_MODERN = 2;
     static final int STATE_OPPO_LEGACY = 3;
+    static final int STATE_HUAWEI = 4;
 
     private final int state;
     private Platform(int state) {
@@ -53,6 +60,7 @@ final class Platform {
         boolean xiaomiFramework = hasSystemClass(XIAOMI_FRAMEWORK);
         boolean xiaomiSdk = hasSystemClass(XIAOMI_WEAR_CONSTANTS);
         boolean oppo = hasSystemClass(OPPO_VIBRATOR);
+        boolean huawei = hasSystemClass(HUAWEI_VIBRATOR_EX);
         // 真 Wear OS（三星、TicWatch、OPPO Watch Wear OS 版等）不介入
         if (google) {
             return new Platform(STATE_INACTIVE);
@@ -63,6 +71,9 @@ final class Platform {
         if (oppo) {
             return new Platform(hasSystemClass(OPPO_SCROLL_FEEDBACK)
                     ? STATE_OPPO_MODERN : STATE_OPPO_LEGACY);
+        }
+        if (huawei) {
+            return new Platform(STATE_HUAWEI);
         }
         return new Platform(STATE_INACTIVE);
     }
@@ -101,8 +112,19 @@ final class Platform {
         return state == STATE_OPPO_LEGACY;
     }
 
+    boolean isHuawei() {
+        return state == STATE_HUAWEI;
+    }
+
     boolean needsLegacyScrollFeedback(int feedbackConstant) {
         return isOppoLegacy() && feedbackConstant == OPPO_TICK;
+    }
+
+    boolean needsHuaweiRotaryFeedback(int feedbackConstant) {
+        return isHuawei()
+                && (feedbackConstant == HUAWEI_FOCUS
+                        || feedbackConstant == HUAWEI_TICK
+                        || feedbackConstant == HUAWEI_LIMIT);
     }
 
     /** 目标 2：仅小米上把 4/27 重映射为 26；其余原样透传。 */
@@ -124,9 +146,9 @@ final class Platform {
         Class<?> hc =
                 appClassLoader.loadClass(
                         "androidx.wear.compose.foundation.rotary.HapticConstants");
-        int focus = isOppo() ? OPPO_FOCUS : XIAOMI_FOCUS;
-        int tick = isOppo() ? OPPO_TICK : XIAOMI_TICK;
-        int limit = isOppo() ? OPPO_LIMIT : XIAOMI_LIMIT;
+        int focus = isOppo() ? OPPO_FOCUS : isHuawei() ? HUAWEI_FOCUS : XIAOMI_FOCUS;
+        int tick = isOppo() ? OPPO_TICK : isHuawei() ? HUAWEI_TICK : XIAOMI_TICK;
+        int limit = isOppo() ? OPPO_LIMIT : isHuawei() ? HUAWEI_LIMIT : XIAOMI_LIMIT;
         return newHapticConstants(hc, focus, tick, limit);
     }
 
